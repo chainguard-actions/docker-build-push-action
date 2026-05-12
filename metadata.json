@@ -1,0 +1,8 @@
+{
+  "owner": "docker",
+  "name": "build-push-action",
+  "alias": "docker-build-push-action",
+  "visibility": "internal",
+  "description": "GitHub Action to build and push Docker images with Buildx",
+  "block_publish": false
+}
