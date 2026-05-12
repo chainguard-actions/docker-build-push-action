@@ -1,0 +1,4 @@
+{
+  "upstream": "docker/build-push-action",
+  "version": "v7.0.0"
+}
