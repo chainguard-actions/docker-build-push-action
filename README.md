@@ -1,6 +1,6 @@
 # docker/build-push-action
 
-GitHub Action to build and push Docker images with Buildx
+Build and push Docker images with Buildx
 
 Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at [https://github.com/docker/build-push-action](https://github.com/docker/build-push-action).
 
