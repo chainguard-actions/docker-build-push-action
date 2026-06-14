@@ -1,0 +1,44 @@
+name: Test builder and build-contexts inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create Dockerfile with target and extra context
+        run: |
+          mkdir -p /tmp/docker-builder-ctx
+          mkdir -p /tmp/extra-ctx
+          echo "hello from extra context" > /tmp/extra-ctx/hello.txt
+          cat > /tmp/docker-builder-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18 AS builder
+          RUN echo "builder stage"
+          FROM alpine:3.18 AS final
+          COPY --from=builder / /builder-root
+          RUN echo "final stage"
+          EOF
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-builder-ctx
+          file: /tmp/docker-builder-ctx/Dockerfile
+          tags: myimage:builder-test
+          builder: ''
+          build-contexts: |
+            extra=/tmp/extra-ctx
+          target: final
+          allow: ''
+          call: ''
+          load: 'true'
+          push: 'false'
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,46 @@
+name: Test advanced build inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create Dockerfile
+        run: |
+          mkdir -p /tmp/docker-adv-ctx
+          cat > /tmp/docker-adv-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "advanced build"
+          EOF
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-adv-ctx
+          file: /tmp/docker-adv-ctx/Dockerfile
+          tags: myimage:advanced-test
+          platforms: linux/amd64
+          outputs: type=local,dest=/tmp/docker-output
+          provenance: 'false'
+          sbom: 'false'
+          attests: ''
+          annotations: |
+            index:org.opencontainers.image.description=Test image
+          push: 'false'
+      - name: Assert output directory exists
+        run: |
+          if [ ! -d "/tmp/docker-output" ]; then
+            echo "FAIL: output directory not found"
+            exit 1
+          fi
+          echo "PASS: output directory exists"
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS"
