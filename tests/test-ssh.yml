@@ -1,0 +1,52 @@
+name: Test Docker build with ssh input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up SSH agent with a test key
+        run: |
+          eval "$(ssh-agent -s)"
+          ssh-keygen -t ed25519 -f /tmp/test_ssh_key -N "" -q
+          ssh-add /tmp/test_ssh_key
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-ssh-ctx
+          cat > /tmp/docker-ssh-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "ssh test"
+          EOF
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-ssh-ctx
+          file: /tmp/docker-ssh-ctx/Dockerfile
+          tags: test-ssh:latest
+          load: 'true'
+          push: 'false'
+          ssh: default=${{ env.SSH_AUTH_SOCK }}
+
+      - name: Assert image was loaded
+        run: |
+          if ! docker image inspect test-ssh:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-ssh:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert metadata is non-empty
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS"

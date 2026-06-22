@@ -1,4 +1,4 @@
-name: Test Docker build with cache-from and cache-to inputs
+name: Test Docker build with network and resource inputs
 on:
   workflow_dispatch:
 jobs:
@@ -7,30 +7,32 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create minimal Dockerfile and cache directory
+      - name: Create minimal Dockerfile
         run: |
-          mkdir -p /tmp/docker-cache-ctx
-          mkdir -p /tmp/docker-cache-store
-          cat > /tmp/docker-cache-ctx/Dockerfile <<'EOF'
+          mkdir -p /tmp/docker-network-ctx
+          cat > /tmp/docker-network-ctx/Dockerfile <<'EOF'
           FROM alpine:3.18
-          RUN echo "cache test"
+          RUN echo "network test"
           EOF
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-cache-ctx
-          file: /tmp/docker-cache-ctx/Dockerfile
-          tags: test-cache:latest
+          context: /tmp/docker-network-ctx
+          file: /tmp/docker-network-ctx/Dockerfile
+          tags: test-network:latest
           load: 'true'
           push: 'false'
-          cache-from: type=local,src=/tmp/docker-cache-store
-          cache-to: type=local,dest=/tmp/docker-cache-store,mode=max
+          add-hosts: myhost:127.0.0.1
+          network: host
+          shm-size: 128m
+          cgroup-parent: ''
+          ulimit: nofile=1024:1024
 
       - name: Assert image was loaded
         run: |
-          if ! docker image inspect test-cache:latest > /dev/null 2>&1; then
-            echo "FAIL: image test-cache:latest not found in local Docker"
+          if ! docker image inspect test-network:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-network:latest not found in local Docker"
             exit 1
           fi
           echo "PASS"

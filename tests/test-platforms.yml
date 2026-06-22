@@ -1,4 +1,4 @@
-name: Test basic Docker build (load)
+name: Test Docker build with platforms input
 on:
   workflow_dispatch:
 jobs:
@@ -9,20 +9,25 @@ jobs:
 
       - name: Create minimal Dockerfile
         run: |
-          mkdir -p /tmp/docker-test-ctx
-          cat > /tmp/docker-test-ctx/Dockerfile <<'EOF'
+          mkdir -p /tmp/docker-platforms-ctx
+          cat > /tmp/docker-platforms-ctx/Dockerfile <<'EOF'
           FROM alpine:3.18
-          RUN echo "hello from test build"
+          RUN echo "platforms test"
           EOF
+
+      - name: Set up QEMU for multi-platform builds
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install all || true
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-test-ctx
-          file: /tmp/docker-test-ctx/Dockerfile
-          tags: test-image:latest
-          load: 'true'
+          context: /tmp/docker-platforms-ctx
+          file: /tmp/docker-platforms-ctx/Dockerfile
+          tags: test-platforms:latest
           push: 'false'
+          platforms: linux/amd64
+          outputs: type=docker,name=test-platforms:latest
 
       - name: Assert metadata is non-empty
         env:
@@ -31,14 +36,6 @@ jobs:
           echo "metadata: $METADATA"
           if [ -z "$METADATA" ]; then
             echo "FAIL: metadata output is empty"
-            exit 1
-          fi
-          echo "PASS"
-
-      - name: Assert image was loaded into Docker
-        run: |
-          if ! docker image inspect test-image:latest > /dev/null 2>&1; then
-            echo "FAIL: image test-image:latest not found in local Docker"
             exit 1
           fi
           echo "PASS"

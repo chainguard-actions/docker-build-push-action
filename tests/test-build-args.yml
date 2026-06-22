@@ -1,0 +1,48 @@
+name: Test Docker build with build-args
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfile that uses build-arg
+        run: |
+          mkdir -p /tmp/docker-buildarg-ctx
+          cat > /tmp/docker-buildarg-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          ARG MY_VERSION=unset
+          RUN echo "version=$MY_VERSION" > /version.txt
+          EOF
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-buildarg-ctx
+          file: /tmp/docker-buildarg-ctx/Dockerfile
+          tags: test-buildarg:latest
+          build-args: MY_VERSION=1.2.3
+          load: 'true'
+          push: 'false'
+
+      - name: Assert metadata is non-empty
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert build-arg was applied inside the image
+        run: |
+          CONTENT=$(docker run --rm test-buildarg:latest cat /version.txt)
+          echo "version file content: $CONTENT"
+          if [ "$CONTENT" != "version=1.2.3" ]; then
+            echo "FAIL: expected 'version=1.2.3', got '$CONTENT'"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,51 @@
+name: Test Docker build with build-contexts and target inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create multi-stage Dockerfile and extra context
+        run: |
+          mkdir -p /tmp/docker-target-ctx
+          mkdir -p /tmp/docker-extra-ctx
+          echo "hello from extra context" > /tmp/docker-extra-ctx/hello.txt
+          cat > /tmp/docker-target-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18 AS base
+          RUN echo "base stage"
+
+          FROM base AS final
+          RUN echo "final stage"
+          EOF
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-target-ctx
+          file: /tmp/docker-target-ctx/Dockerfile
+          tags: test-target:latest
+          load: 'true'
+          push: 'false'
+          target: final
+          build-contexts: extra=/tmp/docker-extra-ctx
+
+      - name: Assert image was loaded
+        run: |
+          if ! docker image inspect test-target:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-target:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert metadata is non-empty
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS"

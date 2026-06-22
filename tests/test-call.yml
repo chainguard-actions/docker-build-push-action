@@ -1,0 +1,30 @@
+name: Test Docker build with call input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-call-ctx
+          cat > /tmp/docker-call-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "call test"
+          EOF
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-call-ctx
+          file: /tmp/docker-call-ctx/Dockerfile
+          tags: test-call:latest
+          push: 'false'
+          call: check
+
+      - name: Assert step completed
+        run: |
+          echo "Build with call=check completed"
+          echo "PASS"

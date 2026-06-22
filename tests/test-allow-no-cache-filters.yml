@@ -1,0 +1,50 @@
+name: Test Docker build with allow and no-cache-filters inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create multi-stage Dockerfile
+        run: |
+          mkdir -p /tmp/docker-allow-ctx
+          cat > /tmp/docker-allow-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18 AS deps
+          RUN echo "deps stage"
+
+          FROM alpine:3.18 AS final
+          COPY --from=deps /etc/os-release /etc/os-release
+          RUN echo "final stage"
+          EOF
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-allow-ctx
+          file: /tmp/docker-allow-ctx/Dockerfile
+          tags: test-allow:latest
+          load: 'true'
+          push: 'false'
+          no-cache-filters: deps
+          allow: network.host
+
+      - name: Assert image was loaded
+        run: |
+          if ! docker image inspect test-allow:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-allow:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert metadata is non-empty
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS"

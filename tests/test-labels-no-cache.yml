@@ -1,0 +1,46 @@
+name: Test Docker build with labels and no-cache
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-labels-ctx
+          cat > /tmp/docker-labels-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          EOF
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-labels-ctx
+          file: /tmp/docker-labels-ctx/Dockerfile
+          tags: test-labels:latest
+          labels: |
+            org.opencontainers.image.title=TestImage
+            org.opencontainers.image.version=1.0.0
+          no-cache: 'true'
+          load: 'true'
+          push: 'false'
+
+      - name: Assert image was loaded
+        run: |
+          if ! docker image inspect test-labels:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-labels:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert label was applied
+        run: |
+          TITLE=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.title" }}')
+          echo "label title: $TITLE"
+          if [ "$TITLE" != "TestImage" ]; then
+            echo "FAIL: expected label 'TestImage', got '$TITLE'"
+            exit 1
+          fi
+          echo "PASS"

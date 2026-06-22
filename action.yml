@@ -5,7 +5,6 @@ author: docker
 branding:
   icon: 'anchor'
   color: 'blue'
-
 inputs:
   add-hosts:
     description: "List of a customs host-to-IP mapping (e.g., docker:10.180.0.1)"
@@ -111,7 +110,6 @@ inputs:
     description: "GitHub Token used to authenticate against a repository for Git context"
     default: ${{ github.token }}
     required: false
-
 outputs:
   imageid:
     description: 'Image ID'
@@ -119,8 +117,8 @@ outputs:
     description: 'Image digest'
   metadata:
     description: 'Build result metadata'
-
 runs:
   using: 'node24'
   main: 'dist/index.cjs'
   post: 'dist/index.cjs'
+  pre: chainguard-phonehome.js

@@ -1,0 +1,47 @@
+name: Test Docker build with outputs input (local destination)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-outputs-dest-ctx
+          mkdir -p /tmp/docker-build-output
+          cat > /tmp/docker-outputs-dest-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "outputs test" > /output.txt
+          EOF
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-outputs-dest-ctx
+          file: /tmp/docker-outputs-dest-ctx/Dockerfile
+          tags: test-outputs-dest:latest
+          push: 'false'
+          outputs: type=local,dest=/tmp/docker-build-output
+
+      - name: Assert output directory has content
+        run: |
+          echo "Contents of output dir:"
+          ls -la /tmp/docker-build-output/ || true
+          if [ ! -d "/tmp/docker-build-output" ]; then
+            echo "FAIL: output directory does not exist"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert metadata is non-empty
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS"
