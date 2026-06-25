@@ -1,0 +1,55 @@
+name: Test Docker build with labels
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify Docker Buildx is available
+        run: docker buildx version
+
+      - id: build
+        uses: .
+        with:
+          context: test
+          file: test/Dockerfile
+          tags: test-labels:local
+          push: 'false'
+          load: 'true'
+          no-cache: 'true'
+          labels: |
+            org.opencontainers.image.title=Test Image
+            org.opencontainers.image.version=1.0.0
+
+      - name: Assert image was loaded into Docker daemon
+        run: |
+          echo "Checking for loaded image..."
+          if ! docker image inspect test-labels:local > /dev/null 2>&1; then
+            echo "FAIL: expected test-labels:local to be present in Docker daemon"
+            docker images
+            exit 1
+          fi
+          echo "PASS: image test-labels:local exists"
+
+      - name: Assert label is present on image
+        run: |
+          LABEL=$(docker image inspect test-labels:local --format '{{ index .Config.Labels "org.opencontainers.image.title" }}')
+          echo "label value: $LABEL"
+          if [ "$LABEL" != "Test Image" ]; then
+            echo "FAIL: expected label 'Test Image', got '$LABEL'"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output was empty"
+            exit 1
+          fi
+          echo "PASS"

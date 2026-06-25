@@ -1,0 +1,42 @@
+name: Test basic Docker build (load into daemon)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify Docker Buildx is available
+        run: docker buildx version
+
+      - id: build
+        uses: .
+        with:
+          context: test
+          file: test/Dockerfile
+          tags: test-image:local
+          push: 'false'
+          load: 'true'
+          no-cache: 'true'
+
+      - name: Assert image was loaded into Docker daemon
+        run: |
+          echo "Checking for loaded image..."
+          if ! docker image inspect test-image:local > /dev/null 2>&1; then
+            echo "FAIL: expected test-image:local to be present in Docker daemon"
+            docker images
+            exit 1
+          fi
+          echo "PASS: image test-image:local exists"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output was empty"
+            exit 1
+          fi
+          echo "PASS"

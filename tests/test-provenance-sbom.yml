@@ -1,0 +1,43 @@
+name: Test Docker build with provenance, sbom, and attests inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify Docker Buildx is available
+        run: docker buildx version
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/simple
+          tags: test-provenance:local
+          push: 'false'
+          no-cache: 'true'
+          outputs: type=docker,dest=/tmp/test-provenance.tar
+          provenance: 'false'
+          sbom: 'false'
+          attests: type=provenance,disabled=true
+
+      - name: Assert Docker tar was created
+        run: |
+          echo "Checking for Docker tar output..."
+          if [ ! -f /tmp/test-provenance.tar ]; then
+            echo "FAIL: expected /tmp/test-provenance.tar to exist"
+            exit 1
+          fi
+          echo "PASS: Docker tar exists"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output was empty"
+            exit 1
+          fi
+          echo "PASS"

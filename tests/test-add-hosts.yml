@@ -1,0 +1,43 @@
+name: Test Docker build with add-hosts input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify Docker Buildx is available
+        run: docker buildx version
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/simple
+          tags: test-add-hosts:local
+          push: 'false'
+          load: 'true'
+          no-cache: 'true'
+          add-hosts: |
+            myhost:127.0.0.1
+
+      - name: Assert image was loaded into Docker daemon
+        run: |
+          echo "Checking for loaded image..."
+          if ! docker image inspect test-add-hosts:local > /dev/null 2>&1; then
+            echo "FAIL: expected test-add-hosts:local to be present in Docker daemon"
+            docker images
+            exit 1
+          fi
+          echo "PASS: image test-add-hosts:local exists"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output was empty"
+            exit 1
+          fi
+          echo "PASS"

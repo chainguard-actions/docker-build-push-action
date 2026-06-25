@@ -1,0 +1,26 @@
+name: Test Docker build with call input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify Docker Buildx is available
+        run: docker buildx version
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/simple
+          tags: test-call:local
+          push: 'false'
+          call: check
+
+      - name: Assert call completed without error
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          echo "PASS: call=check completed without error"
