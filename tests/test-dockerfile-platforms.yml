@@ -1,0 +1,51 @@
+name: Test Docker build with custom Dockerfile path and platforms
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfile at custom path
+        run: |
+          mkdir -p /tmp/docker-file-ctx
+          mkdir -p /tmp/docker-file-ctx/docker
+          cat > /tmp/docker-file-ctx/docker/MyDockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "custom dockerfile path test"
+          EOF
+
+      - name: Set up Docker Buildx with multi-platform support
+        run: |
+          docker buildx create --use --name platforms-builder || true
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-file-ctx
+          file: /tmp/docker-file-ctx/docker/MyDockerfile
+          tags: test-file-image:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          platforms: linux/amd64
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert image was loaded into Docker
+        run: |
+          if ! docker image inspect test-file-image:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-file-image:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS: image found in local Docker"

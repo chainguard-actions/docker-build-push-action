@@ -1,0 +1,55 @@
+name: Test Docker build with build-contexts input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfile and extra build context
+        run: |
+          mkdir -p /tmp/docker-bctx-ctx
+          mkdir -p /tmp/docker-bctx-extra
+          echo "hello from extra context" > /tmp/docker-bctx-extra/hello.txt
+          cat > /tmp/docker-bctx-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          COPY --from=extra /hello.txt /hello.txt
+          RUN cat /hello.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name bctx-builder || true
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-bctx-ctx
+          tags: test-bctx-image:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          build-contexts: extra=/tmp/docker-bctx-extra
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert extra context file was included
+        run: |
+          CONTENT=$(docker run --rm test-bctx-image:latest cat /hello.txt)
+          echo "content: $CONTENT"
+          if echo "$CONTENT" | grep -q "hello from extra context"; then
+            echo "PASS: extra build context was used"
+          else
+            echo "FAIL: extra build context content not found"
+            exit 1
+          fi

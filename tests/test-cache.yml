@@ -1,0 +1,50 @@
+name: Test Docker build with cache inputs (cache-from, cache-to)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-cache-ctx
+          cat > /tmp/docker-cache-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "cache test build"
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name cache-builder || true
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-cache-ctx
+          tags: test-cache-image:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          cache-from: type=local,src=/tmp/docker-cache-store
+          cache-to: type=local,dest=/tmp/docker-cache-store,mode=max
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert image was loaded into Docker
+        run: |
+          if ! docker image inspect test-cache-image:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-cache-image:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS: image found in local Docker"

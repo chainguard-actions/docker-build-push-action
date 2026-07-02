@@ -1,0 +1,59 @@
+name: Test Docker build with allow, ssh, and no-cache-filters inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create multi-stage Dockerfile for no-cache-filters test
+        run: |
+          mkdir -p /tmp/docker-allow-ctx
+          cat > /tmp/docker-allow-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18 AS base
+          RUN echo "base stage"
+          FROM base AS final
+          RUN echo "final stage"
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name allow-builder || true
+
+      - name: Generate a temporary SSH key for testing
+        run: |
+          ssh-keygen -t ed25519 -f /tmp/test_ssh_key -N "" -q
+          eval "$(ssh-agent -s)"
+          ssh-add /tmp/test_ssh_key
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-allow-ctx
+          tags: test-allow-image:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          allow: network.host
+          no-cache-filters: base
+          ssh: default
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert image was loaded into Docker
+        run: |
+          if ! docker image inspect test-allow-image:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-allow-image:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS: image found in local Docker"

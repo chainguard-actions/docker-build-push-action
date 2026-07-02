@@ -1,0 +1,55 @@
+name: Test Docker build with tar output
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-tar-ctx
+          cat > /tmp/docker-tar-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "tar output test"
+          EOF
+          mkdir -p /tmp/docker-tar-output
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name tar-builder || true
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-tar-ctx
+          tags: test-tar-image:latest
+          push: 'false'
+          no-cache: 'true'
+          outputs: type=docker,dest=/tmp/docker-tar-output/image.tar
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert tar file was created
+        run: |
+          if [ ! -f /tmp/docker-tar-output/image.tar ]; then
+            echo "FAIL: image.tar not found at expected path"
+            exit 1
+          fi
+          SIZE=$(stat -c%s /tmp/docker-tar-output/image.tar)
+          echo "tar file size: $SIZE bytes"
+          if [ "$SIZE" -lt 1024 ]; then
+            echo "FAIL: tar file is suspiciously small ($SIZE bytes)"
+            exit 1
+          fi
+          echo "PASS: tar file exists and has reasonable size"

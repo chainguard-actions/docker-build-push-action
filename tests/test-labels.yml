@@ -1,0 +1,61 @@
+name: Test Docker build with labels
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-labels-ctx
+          cat > /tmp/docker-labels-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "labels test"
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name labels-builder || true
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-labels-ctx
+          tags: test-labels-image:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          labels: |
+            org.opencontainers.image.title=Test Image
+            org.opencontainers.image.version=1.0.0
+            custom.label=hello-world
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert labels are present on image
+        run: |
+          LABELS=$(docker image inspect test-labels-image:latest --format '{{json .Config.Labels}}')
+          echo "labels: $LABELS"
+          if echo "$LABELS" | grep -q "Test Image"; then
+            echo "PASS: org.opencontainers.image.title label found"
+          else
+            echo "FAIL: org.opencontainers.image.title label not found"
+            exit 1
+          fi
+          if echo "$LABELS" | grep -q "hello-world"; then
+            echo "PASS: custom.label found"
+          else
+            echo "FAIL: custom.label=hello-world not found"
+            exit 1
+          fi
