@@ -1,4 +1,4 @@
-name: Test build with annotations
+name: Test build with no-cache-filters
 on:
   workflow_dispatch:
 jobs:
@@ -9,31 +9,33 @@ jobs:
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-annotations || true
+          docker buildx create --use --name test-builder-nocachefilters || true
           docker buildx inspect --bootstrap
 
-      - name: Write test Dockerfile
+      - name: Write multi-stage Dockerfile
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/annotations"
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/annotations/Dockerfile" <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/no-cache-filters"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/no-cache-filters/Dockerfile" <<'EOF'
           # syntax=docker/dockerfile:1
-          FROM alpine:3.18
-          RUN echo "annotations test"
+          FROM alpine:3.18 AS base
+          RUN echo "base stage"
+
+          FROM base AS final
+          RUN echo "final stage"
           EOF
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/annotations
-          file: tests/fixtures/annotations/Dockerfile
-          tags: test-annotations:latest
+          context: tests/fixtures/no-cache-filters
+          file: tests/fixtures/no-cache-filters/Dockerfile
+          tags: test-no-cache-filters:latest
           load: 'true'
           push: 'false'
-          no-cache: 'true'
+          no-cache: 'false'
           provenance: 'false'
-          annotations: |
-            org.opencontainers.image.description=Test image for annotations
-            org.opencontainers.image.vendor=TestVendor
+          no-cache-filters: final
+          allow: network.host
 
       - name: Assert imageid is set
         env:

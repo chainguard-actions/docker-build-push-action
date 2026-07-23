@@ -1,4 +1,4 @@
-name: Test basic Docker build (load only)
+name: Test basic build
 on:
   workflow_dispatch:
 jobs:
@@ -7,26 +7,30 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create minimal Dockerfile
-        run: |
-          mkdir -p /tmp/docker-test-ctx
-          cat > /tmp/docker-test-ctx/Dockerfile <<'EOF'
-          FROM alpine:3.18
-          RUN echo "hello from build"
-          EOF
-
       - name: Set up Docker Buildx
         run: |
           docker buildx create --use --name test-builder || true
+          docker buildx inspect --bootstrap
+
+      - name: Write test Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/basic"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/basic/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.18
+          RUN echo "Hello from basic build test"
+          EOF
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-test-ctx
-          tags: test-basic-image:latest
+          context: tests/fixtures/basic
+          file: tests/fixtures/basic/Dockerfile
+          tags: test-basic-build:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
+          provenance: 'false'
 
       - name: Assert imageid is set
         env:
@@ -37,7 +41,7 @@ jobs:
             echo "FAIL: imageid output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid=$IMAGEID"
 
       - name: Assert metadata is set
         env:
@@ -48,12 +52,12 @@ jobs:
             echo "FAIL: metadata output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: metadata is set"
 
       - name: Assert image was loaded into Docker
         run: |
-          if ! docker image inspect test-basic-image:latest > /dev/null 2>&1; then
-            echo "FAIL: image test-basic-image:latest not found in local Docker"
+          if ! docker image inspect test-basic-build:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-basic-build:latest not found in local Docker"
             exit 1
           fi
-          echo "PASS: image found in local Docker"
+          echo "PASS: image is present in local Docker"

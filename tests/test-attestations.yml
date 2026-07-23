@@ -1,4 +1,4 @@
-name: Test build with annotations
+name: Test build with attestations and SBOM
 on:
   workflow_dispatch:
 jobs:
@@ -9,31 +9,30 @@ jobs:
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-annotations || true
+          docker buildx create --use --name test-builder-attest || true
           docker buildx inspect --bootstrap
 
       - name: Write test Dockerfile
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/annotations"
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/annotations/Dockerfile" <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/attestations"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/attestations/Dockerfile" <<'EOF'
           # syntax=docker/dockerfile:1
           FROM alpine:3.18
-          RUN echo "annotations test"
+          RUN echo "attestations test"
           EOF
+          mkdir -p /tmp/attest-output
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/annotations
-          file: tests/fixtures/annotations/Dockerfile
-          tags: test-annotations:latest
-          load: 'true'
+          context: tests/fixtures/attestations
+          file: tests/fixtures/attestations/Dockerfile
+          tags: test-attestations:latest
           push: 'false'
           no-cache: 'true'
-          provenance: 'false'
-          annotations: |
-            org.opencontainers.image.description=Test image for annotations
-            org.opencontainers.image.vendor=TestVendor
+          sbom: 'false'
+          attests: type=provenance,mode=min
+          outputs: type=local,dest=/tmp/attest-output
 
       - name: Assert imageid is set
         env:

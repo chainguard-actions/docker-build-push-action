@@ -1,0 +1,59 @@
+name: Test build with platforms
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up QEMU for multi-platform builds
+        run: |
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes || true
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-platforms || true
+          docker buildx inspect --bootstrap
+
+      - name: Write test Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/platforms"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/platforms/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.18
+          RUN echo "platforms test"
+          EOF
+          mkdir -p /tmp/platforms-output
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/platforms
+          file: tests/fixtures/platforms/Dockerfile
+          tags: test-platforms:latest
+          push: 'false'
+          no-cache: 'true'
+          provenance: 'false'
+          platforms: linux/amd64
+          outputs: type=local,dest=/tmp/platforms-output
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid=$IMAGEID"
+
+      - name: Assert output directory has content
+        run: |
+          if [ -z "$(ls -A /tmp/platforms-output)" ]; then
+            echo "FAIL: platforms output directory is empty"
+            exit 1
+          fi
+          echo "PASS: platforms output directory has content"
+          ls -la /tmp/platforms-output

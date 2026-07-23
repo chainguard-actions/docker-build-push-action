@@ -1,4 +1,4 @@
-name: Test Docker build with cache inputs (cache-from, cache-to)
+name: Test build with cache options
 on:
   workflow_dispatch:
 jobs:
@@ -7,28 +7,33 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create minimal Dockerfile
-        run: |
-          mkdir -p /tmp/docker-cache-ctx
-          cat > /tmp/docker-cache-ctx/Dockerfile <<'EOF'
-          FROM alpine:3.18
-          RUN echo "cache test build"
-          EOF
-
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name cache-builder || true
+          docker buildx create --use --name test-builder-cache || true
+          docker buildx inspect --bootstrap
+
+      - name: Write test Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/cache"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/cache/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.18
+          RUN echo "cache test"
+          EOF
+          mkdir -p /tmp/docker-cache
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-cache-ctx
-          tags: test-cache-image:latest
+          context: tests/fixtures/cache
+          file: tests/fixtures/cache/Dockerfile
+          tags: test-cache:latest
           load: 'true'
           push: 'false'
-          no-cache: 'true'
-          cache-from: type=local,src=/tmp/docker-cache-store
-          cache-to: type=local,dest=/tmp/docker-cache-store,mode=max
+          no-cache: 'false'
+          provenance: 'false'
+          cache-to: type=local,dest=/tmp/docker-cache,mode=max
+          cache-from: type=local,src=/tmp/docker-cache
 
       - name: Assert imageid is set
         env:
@@ -39,12 +44,15 @@ jobs:
             echo "FAIL: imageid output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid=$IMAGEID"
 
-      - name: Assert image was loaded into Docker
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
         run: |
-          if ! docker image inspect test-cache-image:latest > /dev/null 2>&1; then
-            echo "FAIL: image test-cache-image:latest not found in local Docker"
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
             exit 1
           fi
-          echo "PASS: image found in local Docker"
+          echo "PASS: metadata is set"

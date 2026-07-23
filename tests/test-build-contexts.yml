@@ -1,4 +1,4 @@
-name: Test Docker build with build-contexts input
+name: Test build with additional build contexts
 on:
   workflow_dispatch:
 jobs:
@@ -7,30 +7,34 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create Dockerfile and extra build context
-        run: |
-          mkdir -p /tmp/docker-bctx-ctx
-          mkdir -p /tmp/docker-bctx-extra
-          echo "hello from extra context" > /tmp/docker-bctx-extra/hello.txt
-          cat > /tmp/docker-bctx-ctx/Dockerfile <<'EOF'
-          FROM alpine:3.18
-          COPY --from=extra /hello.txt /hello.txt
-          RUN cat /hello.txt
-          EOF
-
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name bctx-builder || true
+          docker buildx create --use --name test-builder-contexts || true
+          docker buildx inspect --bootstrap
+
+      - name: Write test Dockerfiles and context dirs
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/main"
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/extra"
+          echo "extra-file-content" > "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/extra/extra.txt"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/main/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.18
+          COPY --from=extractx /extra.txt /extra.txt
+          RUN cat /extra.txt
+          EOF
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-bctx-ctx
-          tags: test-bctx-image:latest
+          context: tests/fixtures/build-contexts/main
+          file: tests/fixtures/build-contexts/main/Dockerfile
+          tags: test-build-contexts:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
-          build-contexts: extra=/tmp/docker-bctx-extra
+          provenance: 'false'
+          build-contexts: extractx=tests/fixtures/build-contexts/extra
 
       - name: Assert imageid is set
         env:
@@ -41,15 +45,15 @@ jobs:
             echo "FAIL: imageid output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid=$IMAGEID"
 
       - name: Assert extra context file was included
         run: |
-          CONTENT=$(docker run --rm test-bctx-image:latest cat /hello.txt)
-          echo "content: $CONTENT"
-          if echo "$CONTENT" | grep -q "hello from extra context"; then
+          CONTENT=$(docker run --rm test-build-contexts:latest cat /extra.txt)
+          echo "extra.txt content: $CONTENT"
+          if echo "$CONTENT" | grep -q "extra-file-content"; then
             echo "PASS: extra build context was used"
           else
-            echo "FAIL: extra build context content not found"
+            echo "FAIL: extra build context content not found, got: $CONTENT"
             exit 1
           fi

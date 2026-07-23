@@ -1,4 +1,4 @@
-name: Test Docker build with explicit builder input
+name: Test build with named builder
 on:
   workflow_dispatch:
 jobs:
@@ -7,27 +7,31 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create minimal Dockerfile
+      - name: Set up Docker Buildx with named builder
         run: |
-          mkdir -p /tmp/docker-builder-ctx
-          cat > /tmp/docker-builder-ctx/Dockerfile <<'EOF'
-          FROM alpine:3.18
-          RUN echo "builder test"
-          EOF
+          docker buildx create --name my-named-builder --use || true
+          docker buildx inspect --bootstrap
 
-      - name: Create a named Buildx builder
+      - name: Write test Dockerfile
         run: |
-          docker buildx create --name my-custom-builder --use
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/builder"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/builder/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.18
+          RUN echo "named builder test"
+          EOF
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-builder-ctx
-          tags: test-builder-image:latest
+          context: tests/fixtures/builder
+          file: tests/fixtures/builder/Dockerfile
+          tags: test-named-builder:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
-          builder: my-custom-builder
+          provenance: 'false'
+          builder: my-named-builder
 
       - name: Assert imageid is set
         env:
@@ -38,12 +42,12 @@ jobs:
             echo "FAIL: imageid output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid=$IMAGEID"
 
       - name: Assert image was loaded into Docker
         run: |
-          if ! docker image inspect test-builder-image:latest > /dev/null 2>&1; then
-            echo "FAIL: image test-builder-image:latest not found in local Docker"
+          if ! docker image inspect test-named-builder:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-named-builder:latest not found in local Docker"
             exit 1
           fi
-          echo "PASS: image found in local Docker"
+          echo "PASS: image is present in local Docker"

@@ -1,0 +1,62 @@
+name: Test build with local output
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-output || true
+          docker buildx inspect --bootstrap
+
+      - name: Write test Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/output"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/output/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.18
+          RUN echo "output test content" > /output-file.txt
+          EOF
+          mkdir -p "$GITHUB_WORKSPACE/tests/output-dest"
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/output
+          file: tests/fixtures/output/Dockerfile
+          outputs: type=local,dest=tests/output-dest
+          push: 'false'
+          no-cache: 'true'
+          provenance: 'false'
+
+      - name: Assert output file was written locally
+        run: |
+          echo "Listing output destination:"
+          ls -la "$GITHUB_WORKSPACE/tests/output-dest/" || true
+          if [ -f "$GITHUB_WORKSPACE/tests/output-dest/output-file.txt" ]; then
+            CONTENT=$(cat "$GITHUB_WORKSPACE/tests/output-dest/output-file.txt")
+            echo "output-file.txt content: $CONTENT"
+            if echo "$CONTENT" | grep -q "output test content"; then
+              echo "PASS: output file has expected content"
+            else
+              echo "FAIL: output file content mismatch, got: $CONTENT"
+              exit 1
+            fi
+          else
+            echo "FAIL: output-file.txt not found in output destination"
+            exit 1
+          fi
+
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"

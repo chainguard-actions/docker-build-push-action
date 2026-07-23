@@ -1,4 +1,4 @@
-name: Test Docker build with labels
+name: Test build with labels
 on:
   workflow_dispatch:
 jobs:
@@ -7,26 +7,30 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create minimal Dockerfile
+      - name: Set up Docker Buildx
         run: |
-          mkdir -p /tmp/docker-labels-ctx
-          cat > /tmp/docker-labels-ctx/Dockerfile <<'EOF'
+          docker buildx create --use --name test-builder-labels || true
+          docker buildx inspect --bootstrap
+
+      - name: Write test Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/labels"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/labels/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
           FROM alpine:3.18
           RUN echo "labels test"
           EOF
 
-      - name: Set up Docker Buildx
-        run: |
-          docker buildx create --use --name labels-builder || true
-
       - id: build
         uses: .
         with:
-          context: /tmp/docker-labels-ctx
-          tags: test-labels-image:latest
+          context: tests/fixtures/labels
+          file: tests/fixtures/labels/Dockerfile
+          tags: test-labels:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
+          provenance: 'false'
           labels: |
             org.opencontainers.image.title=Test Image
             org.opencontainers.image.version=1.0.0
@@ -41,21 +45,37 @@ jobs:
             echo "FAIL: imageid output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid=$IMAGEID"
 
-      - name: Assert labels are present on image
+      - name: Assert labels were applied
         run: |
-          LABELS=$(docker image inspect test-labels-image:latest --format '{{json .Config.Labels}}')
-          echo "labels: $LABELS"
-          if echo "$LABELS" | grep -q "Test Image"; then
-            echo "PASS: org.opencontainers.image.title label found"
-          else
-            echo "FAIL: org.opencontainers.image.title label not found"
+          TITLE=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.title" }}')
+          VERSION=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
+          CUSTOM=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "custom.label" }}')
+          echo "title: $TITLE"
+          echo "version: $VERSION"
+          echo "custom: $CUSTOM"
+          if [ "$TITLE" != "Test Image" ]; then
+            echo "FAIL: expected title 'Test Image', got '$TITLE'"
             exit 1
           fi
-          if echo "$LABELS" | grep -q "hello-world"; then
-            echo "PASS: custom.label found"
-          else
-            echo "FAIL: custom.label=hello-world not found"
+          if [ "$VERSION" != "1.0.0" ]; then
+            echo "FAIL: expected version '1.0.0', got '$VERSION'"
             exit 1
           fi
+          if [ "$CUSTOM" != "hello-world" ]; then
+            echo "FAIL: expected custom label 'hello-world', got '$CUSTOM'"
+            exit 1
+          fi
+          echo "PASS: all labels verified"
+
+      - name: Assert metadata contains label info
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"

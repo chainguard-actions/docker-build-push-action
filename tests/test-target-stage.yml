@@ -1,4 +1,4 @@
-name: Test Docker build with target stage (multi-stage)
+name: Test build with target stage
 on:
   workflow_dispatch:
 jobs:
@@ -7,31 +7,35 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create multi-stage Dockerfile
-        run: |
-          mkdir -p /tmp/docker-target-ctx
-          cat > /tmp/docker-target-ctx/Dockerfile <<'EOF'
-          FROM alpine:3.18 AS builder
-          RUN echo "builder-stage" > /stage.txt
-
-          FROM alpine:3.18 AS final
-          COPY --from=builder /stage.txt /stage.txt
-          RUN echo "final-stage" >> /stage.txt
-          EOF
-
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name target-builder || true
+          docker buildx create --use --name test-builder-target || true
+          docker buildx inspect --bootstrap
+
+      - name: Write multi-stage Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/target"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/target/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.18 AS builder
+          RUN echo "builder stage" > /stage.txt
+
+          FROM alpine:3.18 AS runtime
+          COPY --from=builder /stage.txt /stage.txt
+          RUN echo "runtime stage" >> /stage.txt
+          EOF
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-target-ctx
-          tags: test-target-image:latest
+          context: tests/fixtures/target
+          file: tests/fixtures/target/Dockerfile
+          tags: test-target-stage:latest
+          target: builder
           load: 'true'
           push: 'false'
           no-cache: 'true'
-          target: builder
+          provenance: 'false'
 
       - name: Assert imageid is set
         env:
@@ -42,20 +46,22 @@ jobs:
             echo "FAIL: imageid output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid=$IMAGEID"
 
-      - name: Assert only builder stage was built (no final-stage content)
+      - name: Assert only builder stage was built
         run: |
-          CONTENT=$(docker run --rm test-target-image:latest cat /stage.txt)
+          # The builder stage only has "builder stage" in stage.txt
+          CONTENT=$(docker run --rm test-target-stage:latest cat /stage.txt)
           echo "stage.txt content: $CONTENT"
-          if echo "$CONTENT" | grep -q "builder-stage"; then
-            echo "PASS: builder-stage content found"
+          if echo "$CONTENT" | grep -q "builder stage"; then
+            echo "PASS: builder stage content found"
           else
-            echo "FAIL: builder-stage content not found"
+            echo "FAIL: builder stage content not found, got: $CONTENT"
             exit 1
           fi
-          if echo "$CONTENT" | grep -q "final-stage"; then
-            echo "FAIL: final-stage content found — target stage was not respected"
+          # The runtime stage content should NOT be present since we stopped at builder
+          if echo "$CONTENT" | grep -q "runtime stage"; then
+            echo "FAIL: runtime stage content found but should not be (target=builder)"
             exit 1
           fi
-          echo "PASS: target stage correctly stopped at builder"
+          echo "PASS: target stage correctly limited to builder"

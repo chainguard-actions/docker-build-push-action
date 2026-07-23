@@ -1,4 +1,4 @@
-name: Test Docker build with build-args
+name: Test build with build-args
 on:
   workflow_dispatch:
 jobs:
@@ -7,28 +7,32 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create Dockerfile that uses build args
+      - name: Set up Docker Buildx
         run: |
-          mkdir -p /tmp/docker-buildargs-ctx
-          cat > /tmp/docker-buildargs-ctx/Dockerfile <<'EOF'
+          docker buildx create --use --name test-builder-args || true
+          docker buildx inspect --bootstrap
+
+      - name: Write test Dockerfile with ARG
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/buildargs"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/buildargs/Dockerfile" <<'EOF'
+          # syntax=docker/dockerfile:1
           FROM alpine:3.18
-          ARG MY_VERSION=unknown
+          ARG MY_VERSION=default
           ARG MY_ENV=production
           RUN echo "version=$MY_VERSION env=$MY_ENV" > /build-info.txt
           EOF
 
-      - name: Set up Docker Buildx
-        run: |
-          docker buildx create --use --name buildargs-builder || true
-
       - id: build
         uses: .
         with:
-          context: /tmp/docker-buildargs-ctx
-          tags: test-buildargs-image:latest
+          context: tests/fixtures/buildargs
+          file: tests/fixtures/buildargs/Dockerfile
+          tags: test-build-args:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
+          provenance: 'false'
           build-args: |
             MY_VERSION=1.2.3
             MY_ENV=testing
@@ -42,21 +46,21 @@ jobs:
             echo "FAIL: imageid output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid=$IMAGEID"
 
       - name: Assert build-args were applied
         run: |
-          CONTENT=$(docker run --rm test-buildargs-image:latest cat /build-info.txt)
-          echo "build-info content: $CONTENT"
+          CONTENT=$(docker run --rm test-build-args:latest cat /build-info.txt)
+          echo "build-info.txt content: $CONTENT"
           if echo "$CONTENT" | grep -q "version=1.2.3"; then
-            echo "PASS: MY_VERSION build arg was applied"
+            echo "PASS: MY_VERSION build-arg was applied"
           else
-            echo "FAIL: MY_VERSION=1.2.3 not found in build output"
+            echo "FAIL: MY_VERSION build-arg was not applied, got: $CONTENT"
             exit 1
           fi
           if echo "$CONTENT" | grep -q "env=testing"; then
-            echo "PASS: MY_ENV build arg was applied"
+            echo "PASS: MY_ENV build-arg was applied"
           else
-            echo "FAIL: MY_ENV=testing not found in build output"
+            echo "FAIL: MY_ENV build-arg was not applied, got: $CONTENT"
             exit 1
           fi
