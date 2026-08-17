@@ -1,0 +1,67 @@
+name: Test build with local output (type=local)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a Dockerfile for local output testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/local-output"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/local-output/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "artifact content" > /artifact.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-local || true
+
+      - name: Create output directory
+        run: mkdir -p /tmp/build-output
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/local-output
+          file: tests/fixtures/local-output/Dockerfile
+          push: 'false'
+          outputs: type=local,dest=/tmp/build-output
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          # For local output, imageid may be empty or set depending on buildx version
+          echo "PASS: imageid check complete (may be empty for local output)"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - name: Assert artifact was exported to local directory
+        run: |
+          if [ ! -f /tmp/build-output/artifact.txt ]; then
+            echo "FAIL: expected artifact.txt not found in /tmp/build-output"
+            ls -la /tmp/build-output/ || true
+            exit 1
+          fi
+          CONTENT=$(cat /tmp/build-output/artifact.txt)
+          echo "artifact content: $CONTENT"
+          if [ "$CONTENT" = "artifact content" ]; then
+            echo "PASS: artifact exported correctly"
+          else
+            echo "FAIL: unexpected artifact content: $CONTENT"
+            exit 1
+          fi

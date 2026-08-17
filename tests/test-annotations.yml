@@ -1,4 +1,4 @@
-name: Test build with secrets
+name: Test build with annotations
 on:
   workflow_dispatch:
 
@@ -8,36 +8,30 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create Dockerfile and secret file for testing
+      - name: Create a minimal Dockerfile for testing
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/secrets"
-          echo "my-secret-value" > /tmp/my-secret-file.txt
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/secrets/Dockerfile" <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/annotations"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/annotations/Dockerfile" <<'EOF'
           FROM alpine:3.18
-          RUN --mount=type=secret,id=mysecret cat /run/secrets/mysecret || echo "secret not required"
-          RUN --mount=type=secret,id=myenvsecret cat /run/secrets/myenvsecret || echo "env secret not required"
-          RUN --mount=type=secret,id=myfilesecret cat /run/secrets/myfilesecret || echo "file secret not required"
+          RUN echo "annotations test"
           CMD ["echo", "hello"]
           EOF
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-secrets || true
+          docker buildx create --use --name test-builder-annotations || true
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/secrets
-          file: tests/fixtures/secrets/Dockerfile
-          tags: test-secrets:latest
+          context: tests/fixtures/annotations
+          file: tests/fixtures/annotations/Dockerfile
+          tags: test-annotations:latest
           load: 'true'
           push: 'false'
-          secrets: |
-            mysecret=my-inline-secret-value
-          secret-envs: |
-            myenvsecret=HOME
-          secret-files: |
-            myfilesecret=/tmp/my-secret-file.txt
+          annotations: |
+            org.opencontainers.image.description=Test image for annotations
+            org.opencontainers.image.vendor=TestVendor
 
       - name: Assert imageid output is set
         env:

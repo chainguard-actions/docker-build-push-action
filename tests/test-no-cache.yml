@@ -1,4 +1,4 @@
-name: Test build with attestations (provenance and sbom)
+name: Test build with no-cache
 on:
   workflow_dispatch:
 
@@ -8,30 +8,28 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create a minimal Dockerfile for testing
+      - name: Create a Dockerfile for no-cache testing
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/attestations"
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/attestations/Dockerfile" <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/no-cache"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/no-cache/Dockerfile" <<'EOF'
           FROM alpine:3.18
-          RUN echo "attestations test"
-          CMD ["echo", "hello"]
+          RUN date > /build-time.txt
+          CMD ["cat", "/build-time.txt"]
           EOF
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-attest || true
+          docker buildx create --use --name test-builder-nocache || true
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/attestations
-          file: tests/fixtures/attestations/Dockerfile
-          tags: test-attestations:latest
+          context: tests/fixtures/no-cache
+          file: tests/fixtures/no-cache/Dockerfile
+          tags: test-no-cache:latest
           load: 'true'
           push: 'false'
-          provenance: 'false'
-          sbom: 'false'
-          attests: ''
+          no-cache: 'true'
 
       - name: Assert imageid output is set
         env:
@@ -54,3 +52,11 @@ jobs:
             exit 1
           fi
           echo "PASS: metadata is set"
+
+      - name: Assert image was built and loaded
+        run: |
+          if ! docker image inspect test-no-cache:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-no-cache:latest not found in local Docker daemon"
+            exit 1
+          fi
+          echo "PASS: image built with no-cache and loaded successfully"

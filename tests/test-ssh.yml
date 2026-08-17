@@ -1,6 +1,7 @@
-name: Test Docker build with ssh input
+name: Test build with SSH agent forwarding
 on:
   workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -10,43 +11,51 @@ jobs:
       - name: Set up SSH agent with a test key
         run: |
           eval "$(ssh-agent -s)"
-          ssh-keygen -t ed25519 -f /tmp/test_ssh_key -N "" -q
-          ssh-add /tmp/test_ssh_key
+          ssh-keygen -t ed25519 -f /tmp/test-ssh-key -N "" -q
+          ssh-add /tmp/test-ssh-key
           echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
 
-      - name: Create minimal Dockerfile
+      - name: Create a minimal Dockerfile for testing
         run: |
-          mkdir -p /tmp/docker-ssh-ctx
-          cat > /tmp/docker-ssh-ctx/Dockerfile <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/ssh"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/ssh/Dockerfile" <<'EOF'
           FROM alpine:3.18
-          RUN echo "ssh test"
+          RUN echo "ssh test - no actual ssh needed"
+          CMD ["echo", "hello"]
           EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-ssh || true
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-ssh-ctx
-          file: /tmp/docker-ssh-ctx/Dockerfile
+          context: tests/fixtures/ssh
+          file: tests/fixtures/ssh/Dockerfile
           tags: test-ssh:latest
           load: 'true'
           push: 'false'
           ssh: default=${{ env.SSH_AUTH_SOCK }}
 
-      - name: Assert image was loaded
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
         run: |
-          if ! docker image inspect test-ssh:latest > /dev/null 2>&1; then
-            echo "FAIL: image test-ssh:latest not found in local Docker"
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: expected imageid to be non-empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid is set"
 
-      - name: Assert metadata is non-empty
+      - name: Assert metadata output is set
         env:
           METADATA: ${{ steps.build.outputs.metadata }}
         run: |
           echo "metadata: $METADATA"
           if [ -z "$METADATA" ]; then
-            echo "FAIL: metadata output is empty"
+            echo "FAIL: expected metadata to be non-empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: metadata is set"

@@ -1,0 +1,170 @@
+# reusable workflow
+name: .e2e-run
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      id:
+        required: false
+        type: string
+      type:
+        required: true
+        type: string
+      name:
+        required: true
+        type: string
+      registry:
+        required: false
+        type: string
+      slug:
+        required: false
+        type: string
+    secrets:
+      registry_username:
+        required: false
+      registry_password:
+        required: false
+
+env:
+  HARBOR_VERSION: v2.13.2
+  NEXUS_VERSION: 3.47.1
+  DISTRIBUTION_VERSION: 3.0.0
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          -
+            buildx_version: edge
+            buildkit_image: moby/buildkit:latest
+          -
+            buildx_version: latest
+            buildkit_image: moby/buildkit:buildx-stable-1
+          -
+            buildx_version: https://github.com/docker/buildx.git#master
+            buildkit_image: moby/buildkit:master
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      -
+        name: Set up env
+        if: inputs.type == 'local'
+        env:
+          ID: ${{ inputs.id }}
+        run: |
+          # Validate ID to prevent path traversal
+          if [[ "$ID" =~ [^a-zA-Z0-9_-] ]]; then
+            echo "::error::Invalid id value"
+            exit 1
+          fi
+          env_file="./.github/e2e/${ID}/env"
+          if [ ! -f "$env_file" ]; then
+            echo "::error::Env file not found"
+            exit 1
+          fi
+          while IFS= read -r line || [ -n "$line" ]; do
+            # Only write lines that look like KEY=VALUE (no newline injection)
+            if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+              printf '%s\n' "$line" >> "$GITHUB_ENV"
+            fi
+          done < "$env_file"
+      -
+        name: Set up BuildKit config
+        env:
+          TYPE: ${{ inputs.type }}
+          REGISTRY_FQDN: ${{ env.REGISTRY_FQDN }}
+        run: |
+          touch /tmp/buildkitd.toml
+          if [ "${TYPE}" = "local" ]; then
+            printf '[registry."%s"]\nhttp = true\ninsecure = true\n' "${REGISTRY_FQDN}" > /tmp/buildkitd.toml
+          fi
+      -
+        name: Set up Docker daemon
+        if: inputs.type == 'local'
+        env:
+          REGISTRY_FQDN: ${{ env.REGISTRY_FQDN }}
+        run: |
+          if [ ! -e /etc/docker/daemon.json ]; then
+            echo '{}' | sudo tee /etc/docker/daemon.json > /dev/null
+          fi
+          DOCKERD_CONFIG=$(jq --arg reg "http://${REGISTRY_FQDN}" '.+{"insecure-registries":[$reg]}' /etc/docker/daemon.json)
+          sudo tee /etc/docker/daemon.json <<< "$DOCKERD_CONFIG" > /dev/null
+          cat /etc/docker/daemon.json
+          sudo service docker restart
+      -
+        name: Install ${{ inputs.name }}
+        if: inputs.type == 'local'
+        env:
+          ID: ${{ inputs.id }}
+        run: |
+          if [[ "$ID" =~ [^a-zA-Z0-9_-] ]]; then
+            echo "::error::Invalid id value"
+            exit 1
+          fi
+          sudo -E bash "./.github/e2e/${ID}/install.sh"
+          sudo chown $(id -u):$(id -g) -R ~/.docker
+      -
+        name: Docker meta
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ${{ env.REGISTRY_SLUG || inputs.slug }}
+          tags: |
+            type=ref,event=branch,enable=${{ matrix.buildx_version == 'latest' && matrix.buildkit_image == 'moby/buildkit:buildx-stable-1' }}
+            type=ref,event=tag,enable=${{ matrix.buildx_version == 'latest' && matrix.buildkit_image == 'moby/buildkit:buildx-stable-1' }}
+            type=raw,gh-runid-${{ github.run_id }}
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          version: ${{ matrix.buildx_version }}
+          buildkitd-config: /tmp/buildkitd.toml
+          buildkitd-flags: --debug --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host
+          driver-opts: |
+            image=${{ matrix.buildkit_image }}
+            network=host
+      -
+        name: Login to Registry
+        if: github.event_name != 'pull_request' && (inputs.type == 'remote' || env.REGISTRY_USER != '')
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY_FQDN || inputs.registry }}
+          username: ${{ env.REGISTRY_USER || secrets.registry_username }}
+          password: ${{ env.REGISTRY_PASSWORD || secrets.registry_password }}
+      -
+        name: Build and push
+        uses: ./
+        with:
+          context: ./test
+          file: ./test/multi.Dockerfile
+          platforms: linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY_SLUG || inputs.slug }}:master
+          cache-to: type=inline
+      -
+        name: Inspect image
+        env:
+          SLUG: ${{ env.REGISTRY_SLUG || inputs.slug }}
+          META_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          docker pull "${SLUG}:${META_VERSION}"
+          docker image inspect "${SLUG}:${META_VERSION}"
+      -
+        name: Check manifest
+        env:
+          SLUG: ${{ env.REGISTRY_SLUG || inputs.slug }}
+          META_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          docker buildx imagetools inspect "${SLUG}:${META_VERSION}" --format '{{json .}}'

@@ -1,0 +1,58 @@
+name: Test build with target stage (multi-stage)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a multi-stage Dockerfile for target testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/target-stage"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/target-stage/Dockerfile" <<'EOF'
+          FROM alpine:3.18 AS builder
+          RUN echo "builder stage" > /stage.txt
+
+          FROM alpine:3.18 AS runtime
+          COPY --from=builder /stage.txt /stage.txt
+          RUN echo "runtime stage" >> /stage.txt
+          CMD ["cat", "/stage.txt"]
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-target || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/target-stage
+          file: tests/fixtures/target-stage/Dockerfile
+          tags: test-target-stage:latest
+          load: 'true'
+          push: 'false'
+          target: runtime
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: expected imageid to be non-empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert target stage was built correctly
+        run: |
+          OUTPUT=$(docker run --rm test-target-stage:latest)
+          echo "container output: $OUTPUT"
+          if echo "$OUTPUT" | grep -q "runtime stage"; then
+            echo "PASS: target stage built correctly"
+          else
+            echo "FAIL: expected 'runtime stage' in output, got: $OUTPUT"
+            exit 1
+          fi

@@ -1,48 +1,58 @@
-name: Test Docker build with build-args
+name: Test build with build-args
 on:
   workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create Dockerfile that uses build-arg
+      - name: Create a Dockerfile that uses build args
         run: |
-          mkdir -p /tmp/docker-buildarg-ctx
-          cat > /tmp/docker-buildarg-ctx/Dockerfile <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/build-args"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/build-args/Dockerfile" <<'EOF'
           FROM alpine:3.18
-          ARG MY_VERSION=unset
-          RUN echo "version=$MY_VERSION" > /version.txt
+          ARG APP_VERSION=unknown
+          ARG APP_NAME=myapp
+          RUN echo "Building $APP_NAME version $APP_VERSION" > /version.txt
+          CMD ["cat", "/version.txt"]
           EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-args || true
 
       - id: build
         uses: .
         with:
-          context: /tmp/docker-buildarg-ctx
-          file: /tmp/docker-buildarg-ctx/Dockerfile
-          tags: test-buildarg:latest
-          build-args: MY_VERSION=1.2.3
+          context: tests/fixtures/build-args
+          file: tests/fixtures/build-args/Dockerfile
+          tags: test-build-args:latest
           load: 'true'
           push: 'false'
+          build-args: |
+            APP_VERSION=1.2.3
+            APP_NAME=testapp
 
-      - name: Assert metadata is non-empty
+      - name: Assert imageid output is set
         env:
-          METADATA: ${{ steps.build.outputs.metadata }}
+          IMAGEID: ${{ steps.build.outputs.imageid }}
         run: |
-          echo "metadata: $METADATA"
-          if [ -z "$METADATA" ]; then
-            echo "FAIL: metadata output is empty"
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: expected imageid to be non-empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: imageid is set"
 
-      - name: Assert build-arg was applied inside the image
+      - name: Assert build args were applied
         run: |
-          CONTENT=$(docker run --rm test-buildarg:latest cat /version.txt)
-          echo "version file content: $CONTENT"
-          if [ "$CONTENT" != "version=1.2.3" ]; then
-            echo "FAIL: expected 'version=1.2.3', got '$CONTENT'"
+          OUTPUT=$(docker run --rm test-build-args:latest)
+          echo "container output: $OUTPUT"
+          if echo "$OUTPUT" | grep -q "testapp" && echo "$OUTPUT" | grep -q "1.2.3"; then
+            echo "PASS: build args were applied correctly"
+          else
+            echo "FAIL: expected build args to be applied, got: $OUTPUT"
             exit 1
           fi
-          echo "PASS"

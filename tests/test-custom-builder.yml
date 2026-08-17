@@ -1,4 +1,4 @@
-name: Test build with attestations (provenance and sbom)
+name: Test build with custom builder instance
 on:
   workflow_dispatch:
 
@@ -10,28 +10,26 @@ jobs:
 
       - name: Create a minimal Dockerfile for testing
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/attestations"
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/attestations/Dockerfile" <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/custom-builder"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/custom-builder/Dockerfile" <<'EOF'
           FROM alpine:3.18
-          RUN echo "attestations test"
+          RUN echo "custom builder test"
           CMD ["echo", "hello"]
           EOF
 
-      - name: Set up Docker Buildx
+      - name: Create a named builder instance
         run: |
-          docker buildx create --use --name test-builder-attest || true
+          docker buildx create --name my-custom-builder --use || true
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/attestations
-          file: tests/fixtures/attestations/Dockerfile
-          tags: test-attestations:latest
+          context: tests/fixtures/custom-builder
+          file: tests/fixtures/custom-builder/Dockerfile
+          tags: test-custom-builder:latest
           load: 'true'
           push: 'false'
-          provenance: 'false'
-          sbom: 'false'
-          attests: ''
+          builder: my-custom-builder
 
       - name: Assert imageid output is set
         env:

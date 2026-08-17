@@ -1,4 +1,4 @@
-name: Test build with attestations (provenance and sbom)
+name: Test build with no-cache-filters
 on:
   workflow_dispatch:
 
@@ -8,30 +8,32 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create a minimal Dockerfile for testing
+      - name: Create a multi-stage Dockerfile for testing
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/attestations"
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/attestations/Dockerfile" <<'EOF'
-          FROM alpine:3.18
-          RUN echo "attestations test"
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/no-cache-filters"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/no-cache-filters/Dockerfile" <<'EOF'
+          FROM alpine:3.18 AS builder
+          RUN echo "builder stage"
+
+          FROM alpine:3.18 AS final
+          COPY --from=builder /etc/alpine-release /alpine-release
+          RUN echo "final stage"
           CMD ["echo", "hello"]
           EOF
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-attest || true
+          docker buildx create --use --name test-builder-nocachefilters || true
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/attestations
-          file: tests/fixtures/attestations/Dockerfile
-          tags: test-attestations:latest
+          context: tests/fixtures/no-cache-filters
+          file: tests/fixtures/no-cache-filters/Dockerfile
+          tags: test-no-cache-filters:latest
           load: 'true'
           push: 'false'
-          provenance: 'false'
-          sbom: 'false'
-          attests: ''
+          no-cache-filters: builder
 
       - name: Assert imageid output is set
         env:

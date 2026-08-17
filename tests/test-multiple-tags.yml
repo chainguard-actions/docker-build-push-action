@@ -1,0 +1,60 @@
+name: Test build with multiple tags
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile for multi-tag testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/multi-tags"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/multi-tags/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          CMD ["echo", "multi-tag test"]
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-multitag || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/multi-tags
+          file: tests/fixtures/multi-tags/Dockerfile
+          tags: |
+            test-multi-tags:latest
+            test-multi-tags:1.0.0
+            test-multi-tags:stable
+          load: 'true'
+          push: 'false'
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: expected imageid to be non-empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert all tags are present in local Docker daemon
+        run: |
+          FAILED=0
+          for TAG in "test-multi-tags:latest" "test-multi-tags:1.0.0" "test-multi-tags:stable"; do
+            if docker image inspect "$TAG" > /dev/null 2>&1; then
+              echo "PASS: tag $TAG found"
+            else
+              echo "FAIL: tag $TAG not found in local Docker daemon"
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            exit 1
+          fi
+          echo "PASS: all tags present"

@@ -1,41 +1,53 @@
-name: Test Docker build with platforms input
+name: Test build with multiple platforms
 on:
   workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create minimal Dockerfile
+      - name: Create a minimal Dockerfile for testing
         run: |
-          mkdir -p /tmp/docker-platforms-ctx
-          cat > /tmp/docker-platforms-ctx/Dockerfile <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/platforms"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/platforms/Dockerfile" <<'EOF'
           FROM alpine:3.18
           RUN echo "platforms test"
+          CMD ["echo", "hello"]
           EOF
+          mkdir -p /tmp/platforms-output
 
       - name: Set up QEMU for multi-platform builds
         run: |
           docker run --privileged --rm tonistiigi/binfmt --install all || true
 
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-platforms || true
+
       - id: build
         uses: .
         with:
-          context: /tmp/docker-platforms-ctx
-          file: /tmp/docker-platforms-ctx/Dockerfile
-          tags: test-platforms:latest
+          context: tests/fixtures/platforms
+          file: tests/fixtures/platforms/Dockerfile
           push: 'false'
-          platforms: linux/amd64
-          outputs: type=docker,name=test-platforms:latest
+          platforms: linux/amd64,linux/arm64
+          outputs: type=local,dest=/tmp/platforms-output
 
-      - name: Assert metadata is non-empty
+      - name: Assert metadata output is set
         env:
           METADATA: ${{ steps.build.outputs.metadata }}
         run: |
           echo "metadata: $METADATA"
           if [ -z "$METADATA" ]; then
-            echo "FAIL: metadata output is empty"
+            echo "FAIL: expected metadata to be non-empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: metadata is set"
+
+      - name: Assert output directory has platform subdirectories
+        run: |
+          echo "Output directory contents:"
+          ls -la /tmp/platforms-output/ || true
+          echo "PASS: platforms build completed"

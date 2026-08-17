@@ -1,0 +1,37 @@
+name: Test build with call=check evaluation
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile for testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/call-check"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/call-check/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "call check test"
+          CMD ["echo", "hello"]
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-call || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/call-check
+          file: tests/fixtures/call-check/Dockerfile
+          push: 'false'
+          call: check
+
+      - name: Assert step completed
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          echo "PASS: call=check step completed"

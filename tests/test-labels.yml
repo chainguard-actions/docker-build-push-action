@@ -1,0 +1,78 @@
+name: Test build with labels
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile for label testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/labels"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/labels/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          CMD ["echo", "label test"]
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-labels || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/labels
+          file: tests/fixtures/labels/Dockerfile
+          tags: test-labels:latest
+          load: 'true'
+          push: 'false'
+          labels: |
+            org.opencontainers.image.title=Test Image
+            org.opencontainers.image.version=1.0.0
+            com.example.custom=test-value
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: expected imageid to be non-empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - name: Assert labels were applied to the image
+        run: |
+          LABEL_TITLE=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.title" }}')
+          LABEL_VERSION=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
+          LABEL_CUSTOM=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "com.example.custom" }}')
+          echo "title label: $LABEL_TITLE"
+          echo "version label: $LABEL_VERSION"
+          echo "custom label: $LABEL_CUSTOM"
+          if [ "$LABEL_TITLE" != "Test Image" ]; then
+            echo "FAIL: expected title label 'Test Image', got '$LABEL_TITLE'"
+            exit 1
+          fi
+          if [ "$LABEL_VERSION" != "1.0.0" ]; then
+            echo "FAIL: expected version label '1.0.0', got '$LABEL_VERSION'"
+            exit 1
+          fi
+          if [ "$LABEL_CUSTOM" != "test-value" ]; then
+            echo "FAIL: expected custom label 'test-value', got '$LABEL_CUSTOM'"
+            exit 1
+          fi
+          echo "PASS: all labels applied correctly"
