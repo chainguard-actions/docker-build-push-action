@@ -1,0 +1,2 @@
+FROM alpine:3.19
+RUN mkdir -p /output && echo "build-artifact-content" > /output/artifact.txt

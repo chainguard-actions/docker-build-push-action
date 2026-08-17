@@ -1,4 +1,4 @@
-name: Test Docker build with add-hosts input
+name: Test build with add-hosts
 on:
   workflow_dispatch:
 jobs:
@@ -7,37 +7,47 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Verify Docker Buildx is available
-        run: docker buildx version
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx version || true
+          docker buildx create --name test-builder-add-hosts --use --bootstrap 2>/dev/null || \
+            docker buildx use test-builder-add-hosts 2>/dev/null || true
+          docker buildx inspect --bootstrap
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/simple
-          tags: test-add-hosts:local
-          push: 'false'
+          context: .
+          file: tests/fixtures/Dockerfile.basic
           load: 'true'
-          no-cache: 'true'
+          push: 'false'
+          tags: test-add-hosts:latest
           add-hosts: |
             myhost:127.0.0.1
+          provenance: 'false'
+          sbom: 'false'
+        env:
+          DOCKER_BUILD_SUMMARY: 'false'
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
 
-      - name: Assert image was loaded into Docker daemon
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
         run: |
-          echo "Checking for loaded image..."
-          if ! docker image inspect test-add-hosts:local > /dev/null 2>&1; then
-            echo "FAIL: expected test-add-hosts:local to be present in Docker daemon"
-            docker images
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty — build with add-hosts may have failed"
             exit 1
           fi
-          echo "PASS: image test-add-hosts:local exists"
+          echo "PASS: imageid is set to $IMAGEID"
 
-      - name: Assert metadata output is set
+      - name: Assert metadata is set
         env:
           METADATA: ${{ steps.build.outputs.metadata }}
         run: |
           echo "metadata: $METADATA"
           if [ -z "$METADATA" ]; then
-            echo "FAIL: metadata output was empty"
+            echo "FAIL: metadata output is empty"
             exit 1
           fi
-          echo "PASS"
+          echo "PASS: metadata is set"

@@ -1,4 +1,4 @@
-name: Test basic build
+name: Test build with labels
 on:
   workflow_dispatch:
 jobs:
@@ -10,18 +10,22 @@ jobs:
       - name: Set up Docker Buildx
         run: |
           docker buildx version || true
-          docker buildx create --name test-builder-basic --use --bootstrap 2>/dev/null || \
-            docker buildx use test-builder-basic 2>/dev/null || true
+          docker buildx create --name test-builder-labels --use --bootstrap 2>/dev/null || \
+            docker buildx use test-builder-labels 2>/dev/null || true
           docker buildx inspect --bootstrap
 
       - id: build
         uses: .
         with:
           context: .
-          file: tests/fixtures/Dockerfile.basic
+          file: tests/fixtures/Dockerfile.labels
           load: 'true'
           push: 'false'
-          tags: test-basic-build:latest
+          tags: test-build-labels:latest
+          labels: |
+            org.opencontainers.image.title=Test Image
+            org.opencontainers.image.version=1.0.0
+            custom.label=test-value
           provenance: 'false'
           sbom: 'false'
         env:
@@ -50,10 +54,18 @@ jobs:
           fi
           echo "PASS: metadata is set"
 
-      - name: Assert image was loaded into Docker
+      - name: Assert image labels are set correctly
         run: |
-          if ! docker image inspect test-basic-build:latest > /dev/null 2>&1; then
-            echo "FAIL: image test-basic-build:latest not found in Docker"
+          TITLE=$(docker inspect test-build-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.title" }}')
+          echo "title label: $TITLE"
+          if [ "$TITLE" != "Test Image" ]; then
+            echo "FAIL: expected label 'org.opencontainers.image.title' to be 'Test Image', got '$TITLE'"
             exit 1
           fi
-          echo "PASS: image found in Docker"
+          CUSTOM=$(docker inspect test-build-labels:latest --format '{{ index .Config.Labels "custom.label" }}')
+          echo "custom label: $CUSTOM"
+          if [ "$CUSTOM" != "test-value" ]; then
+            echo "FAIL: expected label 'custom.label' to be 'test-value', got '$CUSTOM'"
+            exit 1
+          fi
+          echo "PASS: labels are set correctly"

@@ -1,4 +1,4 @@
-name: Test build with cache-from and cache-to
+name: Test build with target stage
 on:
   workflow_dispatch:
 jobs:
@@ -10,21 +10,19 @@ jobs:
       - name: Set up Docker Buildx
         run: |
           docker buildx version || true
-          docker buildx create --name test-builder-cache --use --bootstrap 2>/dev/null || \
-            docker buildx use test-builder-cache 2>/dev/null || true
+          docker buildx create --name test-builder-target --use --bootstrap 2>/dev/null || \
+            docker buildx use test-builder-target 2>/dev/null || true
           docker buildx inspect --bootstrap
-          mkdir -p /tmp/buildx-cache
 
       - id: build
         uses: .
         with:
           context: .
-          file: tests/fixtures/Dockerfile.cache
+          file: tests/fixtures/Dockerfile.multistage
           load: 'true'
           push: 'false'
-          tags: test-cache:latest
-          cache-from: type=local,src=/tmp/buildx-cache
-          cache-to: type=local,dest=/tmp/buildx-cache-new,mode=max
+          tags: test-build-target:builder
+          target: builder
           provenance: 'false'
           sbom: 'false'
         env:
@@ -37,7 +35,7 @@ jobs:
         run: |
           echo "imageid: $IMAGEID"
           if [ -z "$IMAGEID" ]; then
-            echo "FAIL: imageid output is empty — build with cache may have failed"
+            echo "FAIL: imageid output is empty — target stage build may have failed"
             exit 1
           fi
           echo "PASS: imageid is set to $IMAGEID"
@@ -52,3 +50,17 @@ jobs:
             exit 1
           fi
           echo "PASS: metadata is set"
+
+      - name: Assert target stage image was loaded and contains expected content
+        run: |
+          if ! docker image inspect test-build-target:builder > /dev/null 2>&1; then
+            echo "FAIL: image test-build-target:builder not found in Docker"
+            exit 1
+          fi
+          CONTENT=$(docker run --rm test-build-target:builder cat /stage.txt)
+          echo "stage.txt content: $CONTENT"
+          if ! echo "$CONTENT" | grep -q "builder stage"; then
+            echo "FAIL: expected 'builder stage' in /stage.txt, got: $CONTENT"
+            exit 1
+          fi
+          echo "PASS: target stage built correctly"

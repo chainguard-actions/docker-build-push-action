@@ -1,0 +1,3 @@
+FROM alpine:3.19 AS base
+RUN echo "build contexts test"
+LABEL test=buildcontexts

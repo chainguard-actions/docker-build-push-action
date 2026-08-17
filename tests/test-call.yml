@@ -1,4 +1,4 @@
-name: Test Docker build with call input
+name: Test build with call
 on:
   workflow_dispatch:
 jobs:
@@ -7,20 +7,32 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Verify Docker Buildx is available
-        run: docker buildx version
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx version || true
+          docker buildx create --name test-builder-call --use --bootstrap 2>/dev/null || \
+            docker buildx use test-builder-call 2>/dev/null || true
+          docker buildx inspect --bootstrap
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/simple
-          tags: test-call:local
+          context: .
+          file: tests/fixtures/Dockerfile.basic
           push: 'false'
+          tags: test-call:latest
           call: check
+          provenance: 'false'
+          sbom: 'false'
+        env:
+          DOCKER_BUILD_SUMMARY: 'false'
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
 
-      - name: Assert call completed without error
+      - name: Assert metadata is set
         env:
           METADATA: ${{ steps.build.outputs.metadata }}
         run: |
           echo "metadata: $METADATA"
-          echo "PASS: call=check completed without error"
+          # call=check performs a lint/check pass; metadata may be empty or set
+          # The key assertion is that the step completed without error
+          echo "PASS: build with call=check completed"

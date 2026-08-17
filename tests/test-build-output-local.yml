@@ -1,0 +1,58 @@
+name: Test build with local output
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx version || true
+          docker buildx create --name test-builder-output --use --bootstrap 2>/dev/null || \
+            docker buildx use test-builder-output 2>/dev/null || true
+          docker buildx inspect --bootstrap
+
+      - name: Create output directory
+        run: mkdir -p /tmp/build-output
+
+      - id: build
+        uses: .
+        with:
+          context: .
+          file: tests/fixtures/Dockerfile.localoutput
+          push: 'false'
+          outputs: type=local,dest=/tmp/build-output
+          provenance: 'false'
+          sbom: 'false'
+        env:
+          DOCKER_BUILD_SUMMARY: 'false'
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - name: Assert local output artifact was created
+        run: |
+          echo "Contents of /tmp/build-output:"
+          find /tmp/build-output -type f | head -20
+          if [ ! -f "/tmp/build-output/output/artifact.txt" ]; then
+            echo "FAIL: expected artifact file not found at /tmp/build-output/output/artifact.txt"
+            exit 1
+          fi
+          CONTENT=$(cat /tmp/build-output/output/artifact.txt)
+          echo "artifact content: $CONTENT"
+          if [ "$CONTENT" != "build-artifact-content" ]; then
+            echo "FAIL: expected 'build-artifact-content', got '$CONTENT'"
+            exit 1
+          fi
+          echo "PASS: local output artifact created correctly"

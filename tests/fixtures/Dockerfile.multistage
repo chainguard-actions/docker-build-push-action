@@ -1,0 +1,9 @@
+FROM alpine:3.19 AS base
+RUN echo "base stage" > /stage.txt
+
+FROM base AS builder
+RUN echo "builder stage" >> /stage.txt
+
+FROM alpine:3.19 AS final
+COPY --from=builder /stage.txt /stage.txt
+RUN cat /stage.txt

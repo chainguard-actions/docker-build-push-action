@@ -1,0 +1,3 @@
+FROM alpine:3.19
+RUN echo "Hello from basic build test"
+LABEL test=basic

@@ -1,0 +1,4 @@
+FROM alpine:3.19
+ARG MY_VERSION=default
+ARG MY_ENV=production
+RUN echo "Version: $MY_VERSION, Env: $MY_ENV"
