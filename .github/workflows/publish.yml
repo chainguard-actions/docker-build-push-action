@@ -1,0 +1,21 @@
+name: publish
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      -
+        name: Publish
+        uses: actions/publish-immutable-action@4bc8754ffc40f27910afb20287dbbbb675a4e978 # v0.0.4

@@ -1,0 +1,62 @@
+name: Test build with no-cache and target stage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create multi-stage Dockerfile
+        run: |
+          mkdir -p /tmp/multistage-ctx
+          cat > /tmp/multistage-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.19 AS base
+          RUN echo "base stage" > /stage.txt
+
+          FROM base AS final
+          RUN echo "final stage" >> /stage.txt
+          CMD ["cat", "/stage.txt"]
+          EOF
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - id: build
+        name: Build image targeting base stage with no-cache
+        uses: .
+        with:
+          context: /tmp/multistage-ctx
+          load: 'true'
+          push: 'false'
+          tags: test-no-cache-target:latest
+          target: base
+          no-cache: 'true'
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert target stage was built (only base stage content)
+        run: |
+          OUTPUT=$(docker run --rm test-no-cache-target:latest cat /stage.txt)
+          echo "container output: $OUTPUT"
+          # The base stage only writes "base stage", not "final stage"
+          if echo "$OUTPUT" | grep -q "base stage"; then
+            echo "PASS: base stage content found"
+          else
+            echo "FAIL: expected 'base stage' in output, got: $OUTPUT"
+            exit 1
+          fi
+          if echo "$OUTPUT" | grep -q "final stage"; then
+            echo "FAIL: final stage content should not be present when targeting 'base'"
+            exit 1
+          fi
+          echo "PASS: target stage correctly built"

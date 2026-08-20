@@ -1,0 +1,64 @@
+name: Test build-contexts input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Create additional build context directory
+        run: |
+          mkdir -p /tmp/extra-ctx
+          echo "extra context file" > /tmp/extra-ctx/extra.txt
+          mkdir -p /tmp/build-contexts-ctx
+          cat > /tmp/build-contexts-ctx/Dockerfile << 'EOF'
+          # syntax=docker/dockerfile:1
+          FROM alpine:3.19
+          COPY --from=extractx /extra.txt /extra.txt
+          RUN cat /extra.txt
+          CMD ["echo", "hello"]
+          EOF
+
+      - id: build
+        name: Build image with additional build-contexts
+        uses: .
+        with:
+          context: /tmp/build-contexts-ctx
+          push: 'false'
+          load: 'true'
+          tags: test-build-contexts:latest
+          build-contexts: 'extractx=/tmp/extra-ctx'
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - name: Assert image was loaded into Docker
+        run: |
+          if ! docker image inspect test-build-contexts:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-build-contexts:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS: image is present in local Docker"

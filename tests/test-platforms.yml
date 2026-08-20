@@ -1,0 +1,46 @@
+name: Test platforms and builder inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up QEMU for multi-platform builds
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - id: build
+        name: Build image for linux/amd64 platform with explicit builder
+        uses: .
+        with:
+          context: hardened/tests/fixtures
+          file: hardened/tests/fixtures/Dockerfile
+          push: 'false'
+          platforms: 'linux/amd64'
+          builder: ${{ steps.buildx.outputs.name }}
+          outputs: 'type=local,dest=/tmp/platforms-output'
+
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - name: Assert local output exists
+        run: |
+          if [ ! -d /tmp/platforms-output ]; then
+            echo "FAIL: expected output directory not found"
+            exit 1
+          fi
+          echo "PASS: output directory exists"
+          ls -la /tmp/platforms-output/ || true

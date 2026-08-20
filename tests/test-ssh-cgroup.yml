@@ -1,0 +1,39 @@
+name: Test ssh and cgroup-parent inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/ssh-cgroup-ctx
+          cat > /tmp/ssh-cgroup-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "ssh cgroup test"
+          EOF
+      - name: Start SSH agent
+        id: ssh-agent
+        run: |
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+      - id: action
+        uses: .
+        with:
+          context: /tmp/ssh-cgroup-ctx
+          push: 'false'
+          ssh: default
+          cgroup-parent: /docker
+          outputs: type=cacheonly
+      - name: Assert metadata output exists
+        env:
+          METADATA: ${{ steps.action.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS"

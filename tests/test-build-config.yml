@@ -1,0 +1,38 @@
+name: Test build configuration inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/build-config-ctx
+          cat > /tmp/build-config-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "build config test"
+          EOF
+      - id: action
+        uses: .
+        with:
+          context: /tmp/build-config-ctx
+          push: 'false'
+          load: 'false'
+          no-cache: 'true'
+          network: host
+          shm-size: 128m
+          ulimit: nofile=1024:1024
+          add-hosts: myhost:127.0.0.1
+          no-cache-filters: ''
+          outputs: type=cacheonly
+      - name: Assert metadata output exists
+        env:
+          METADATA: ${{ steps.action.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS"

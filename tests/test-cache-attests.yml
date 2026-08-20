@@ -1,0 +1,72 @@
+name: Test cache-from, cache-to, and attests inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-cache-attests-ctx
+          cat > /tmp/docker-cache-attests-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "hello from cache-attests test"
+          EOF
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # First build: populate the local cache (no load, no attests)
+      - name: Build and populate cache
+        uses: .
+        with:
+          context: /tmp/docker-cache-attests-ctx
+          tags: test-cache-attests:seed
+          push: 'false'
+          load: 'false'
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      # Second build: use cache-from, cache-to, and attests
+      # NOTE: attests (sbom) produces a manifest list, which is incompatible
+      # with --load (docker exporter). Use outputs=type=oci instead.
+      - id: build
+        name: Build with cache-from, cache-to, and attests
+        uses: .
+        with:
+          context: /tmp/docker-cache-attests-ctx
+          tags: test-cache-attests:latest
+          push: 'false'
+          load: 'false'
+          outputs: type=oci,dest=/tmp/test-cache-attests.tar
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          attests: type=sbom
+
+      - name: Assert metadata is non-empty
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert OCI tar was written
+        run: |
+          if [ ! -f /tmp/test-cache-attests.tar ]; then
+            echo "FAIL: OCI output tar /tmp/test-cache-attests.tar was not created"
+            exit 1
+          fi
+          echo "PASS: OCI output tar exists"
+
+      - name: Assert cache directory was written
+        run: |
+          if [ ! -d /tmp/.buildx-cache-new ]; then
+            echo "FAIL: cache-to destination /tmp/.buildx-cache-new was not created"
+            exit 1
+          fi
+          echo "PASS: cache-to destination exists"

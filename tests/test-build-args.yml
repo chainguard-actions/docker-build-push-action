@@ -1,0 +1,62 @@
+name: Test build with build-args
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfile with ARG
+        run: |
+          mkdir -p /tmp/build-args-ctx
+          cat > /tmp/build-args-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.19
+          ARG MY_VERSION=unset
+          ARG MY_ENV=unset
+          RUN echo "version=$MY_VERSION env=$MY_ENV" > /build-info.txt
+          CMD ["cat", "/build-info.txt"]
+          EOF
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - id: build
+        name: Build image with build-args
+        uses: .
+        with:
+          context: /tmp/build-args-ctx
+          load: 'true'
+          push: 'false'
+          tags: test-build-args:latest
+          build-args: |
+            MY_VERSION=1.2.3
+            MY_ENV=production
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert build-args were applied
+        run: |
+          OUTPUT=$(docker run --rm test-build-args:latest)
+          echo "container output: $OUTPUT"
+          if echo "$OUTPUT" | grep -q "version=1.2.3"; then
+            echo "PASS: MY_VERSION build-arg was applied"
+          else
+            echo "FAIL: MY_VERSION build-arg not found in output: $OUTPUT"
+            exit 1
+          fi
+          if echo "$OUTPUT" | grep -q "env=production"; then
+            echo "PASS: MY_ENV build-arg was applied"
+          else
+            echo "FAIL: MY_ENV build-arg not found in output: $OUTPUT"
+            exit 1
+          fi

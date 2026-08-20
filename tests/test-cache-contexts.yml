@@ -1,0 +1,35 @@
+name: Test cache and build-contexts inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create minimal Dockerfile and extra context
+        run: |
+          mkdir -p /tmp/cache-ctx
+          mkdir -p /tmp/extra-ctx
+          echo "extra file" > /tmp/extra-ctx/extra.txt
+          cat > /tmp/cache-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          COPY --from=extra extra.txt /extra.txt
+          RUN echo "build-contexts test"
+          EOF
+      - id: action
+        uses: .
+        with:
+          context: /tmp/cache-ctx
+          push: 'false'
+          build-contexts: extra=/tmp/extra-ctx
+          outputs: type=cacheonly
+      - name: Assert metadata output exists
+        env:
+          METADATA: ${{ steps.action.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS"

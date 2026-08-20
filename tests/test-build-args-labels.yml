@@ -1,0 +1,64 @@
+name: Test build with build-args and labels
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Dockerfile that uses build-arg
+        run: |
+          mkdir -p /tmp/docker-args-ctx
+          cat > /tmp/docker-args-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          ARG MY_VERSION=unknown
+          RUN echo "version=$MY_VERSION" > /version.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-args-ctx
+          tags: test-build-args:latest
+          load: 'true'
+          push: 'false'
+          build-args: |
+            MY_VERSION=1.2.3
+          labels: |
+            org.opencontainers.image.version=1.2.3
+            org.opencontainers.image.title=test-build-args
+
+      - name: Assert imageid is non-empty
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert build-arg was applied (version file contains expected value)
+        run: |
+          RESULT=$(docker run --rm test-build-args:latest cat /version.txt)
+          echo "version file content: $RESULT"
+          if [ "$RESULT" != "version=1.2.3" ]; then
+            echo "FAIL: expected 'version=1.2.3', got '$RESULT'"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert label was applied
+        run: |
+          LABEL=$(docker inspect test-build-args:latest --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
+          echo "label value: $LABEL"
+          if [ "$LABEL" != "1.2.3" ]; then
+            echo "FAIL: expected label '1.2.3', got '$LABEL'"
+            exit 1
+          fi
+          echo "PASS"

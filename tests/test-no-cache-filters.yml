@@ -1,0 +1,55 @@
+name: Test no-cache-filters input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Create multi-stage Dockerfile for no-cache-filters test
+        run: |
+          mkdir -p /tmp/no-cache-filters-ctx
+          cat > /tmp/no-cache-filters-ctx/Dockerfile << 'EOF'
+          FROM alpine:3.19 AS base
+          RUN echo "base stage"
+
+          FROM base AS final
+          RUN echo "final stage"
+          CMD ["echo", "hello"]
+          EOF
+
+      - id: build
+        name: Build image with no-cache-filters on final stage
+        uses: .
+        with:
+          context: /tmp/no-cache-filters-ctx
+          push: 'false'
+          load: 'true'
+          tags: test-no-cache-filters:latest
+          no-cache-filters: 'final'
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"

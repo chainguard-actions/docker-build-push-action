@@ -1,0 +1,56 @@
+name: Test cache inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Prepare cache directory
+        run: mkdir -p /tmp/buildx-cache
+
+      - id: build
+        name: Build image with cache-to (populate cache)
+        uses: .
+        with:
+          context: hardened/tests/fixtures
+          file: hardened/tests/fixtures/Dockerfile
+          push: 'false'
+          outputs: 'type=local,dest=/tmp/cache-test-output'
+          cache-to: 'type=local,dest=/tmp/buildx-cache,mode=max'
+
+      - name: Assert metadata is set after first build
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - id: build-cached
+        name: Build image with cache-from (use cache)
+        uses: .
+        with:
+          context: hardened/tests/fixtures
+          file: hardened/tests/fixtures/Dockerfile
+          push: 'false'
+          outputs: 'type=local,dest=/tmp/cache-test-output2'
+          cache-from: 'type=local,src=/tmp/buildx-cache'
+
+      - name: Assert metadata is set after cached build
+        env:
+          METADATA: ${{ steps.build-cached.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty on cached build"
+            exit 1
+          fi
+          echo "PASS: metadata is set on cached build"
