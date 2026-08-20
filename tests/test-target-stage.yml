@@ -1,0 +1,45 @@
+name: Test build with target stage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/target
+          file: tests/fixtures/target/Dockerfile
+          tags: test-target:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          target: development
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert correct target stage was built
+        run: |
+          STAGE=$(docker run --rm test-target:latest cat /stage.txt)
+          echo "stage: $STAGE"
+          if [ "$STAGE" != "development" ]; then
+            echo "FAIL: expected 'development' stage, got '$STAGE'"
+            exit 1
+          fi
+          echo "PASS: correct target stage built"

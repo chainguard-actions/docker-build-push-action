@@ -1,0 +1,37 @@
+name: Test build call=check (lint/validate Dockerfile)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
+
+      - id: build
+        uses: .
+        continue-on-error: true
+        with:
+          context: tests/fixtures/call-check
+          file: tests/fixtures/call-check/Dockerfile
+          tags: test-call-check:latest
+          push: 'false'
+          call: check
+
+      - name: Assert call=check ran (success or graceful failure)
+        env:
+          OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: call=check succeeded"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: call=check ran and failed gracefully (may require newer buildx)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

@@ -1,0 +1,44 @@
+name: Test build without tags and without push
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
+
+      - name: Create output directory
+        run: mkdir -p "$GITHUB_WORKSPACE/tests/output-no-tags"
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/no-tags
+          file: tests/fixtures/no-tags/Dockerfile
+          push: 'false'
+          no-cache: 'true'
+          outputs: type=docker,dest=tests/output-no-tags/image.tar
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid=$IMAGEID"
+
+      - name: Assert tar output was created
+        run: |
+          if [ ! -f "$GITHUB_WORKSPACE/tests/output-no-tags/image.tar" ]; then
+            echo "FAIL: expected tar file not found"
+            exit 1
+          fi
+          echo "PASS: tar file created"

@@ -1,0 +1,64 @@
+name: Test build with labels
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/labels
+          file: tests/fixtures/labels/Dockerfile
+          tags: test-labels:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          labels: |
+            org.opencontainers.image.title=Test Image
+            org.opencontainers.image.version=1.0.0
+            custom.label=test-value
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert labels are present on the image
+        run: |
+          TITLE=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.title" }}')
+          echo "title label: $TITLE"
+          if [ "$TITLE" != "Test Image" ]; then
+            echo "FAIL: expected label 'org.opencontainers.image.title=Test Image', got '$TITLE'"
+            exit 1
+          fi
+          echo "PASS: title label correct"
+
+          VERSION=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
+          echo "version label: $VERSION"
+          if [ "$VERSION" != "1.0.0" ]; then
+            echo "FAIL: expected label 'org.opencontainers.image.version=1.0.0', got '$VERSION'"
+            exit 1
+          fi
+          echo "PASS: version label correct"
+
+          CUSTOM=$(docker inspect test-labels:latest --format '{{ index .Config.Labels "custom.label" }}')
+          echo "custom label: $CUSTOM"
+          if [ "$CUSTOM" != "test-value" ]; then
+            echo "FAIL: expected label 'custom.label=test-value', got '$CUSTOM'"
+            exit 1
+          fi
+          echo "PASS: custom label correct"

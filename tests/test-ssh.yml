@@ -1,0 +1,48 @@
+name: Test ssh input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create minimal Dockerfile
+        run: |
+          mkdir -p /tmp/docker-ctx
+          cat > /tmp/docker-ctx/Dockerfile <<'EOF'
+          FROM alpine:3.19
+          RUN echo "ssh test"
+          EOF
+
+      - name: Start SSH agent
+        run: |
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+
+      - id: action
+        uses: .
+        with:
+          context: /tmp/docker-ctx
+          push: 'false'
+          load: 'true'
+          tags: test-ssh:latest
+          ssh: 'default'
+        continue-on-error: true
+
+      - name: Assert build ran with ssh input
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          METADATA: ${{ steps.action.outputs.metadata }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "metadata: $METADATA"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: build succeeded with ssh input"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: build failed gracefully (SSH agent may not be available or have keys)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

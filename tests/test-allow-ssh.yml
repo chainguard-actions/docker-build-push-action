@@ -1,0 +1,60 @@
+name: Test Docker build with allow and ssh inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfile
+        run: |
+          mkdir -p /tmp/docker-allow-test
+          cat > /tmp/docker-allow-test/Dockerfile <<'EOF'
+          FROM alpine:3.18
+          RUN echo "allow test build"
+          CMD ["echo", "done"]
+          EOF
+
+      - name: Set up SSH agent
+        run: |
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - id: build
+        uses: .
+        with:
+          context: /tmp/docker-allow-test
+          file: /tmp/docker-allow-test/Dockerfile
+          tags: test-allow:latest
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+          allow: network.host
+          ssh: default
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: expected imageid to be non-empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert metadata is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,63 @@
+name: Test build with multiple tags
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/multi-tags
+          file: tests/fixtures/multi-tags/Dockerfile
+          tags: |
+            test-multi:latest
+            test-multi:1.0.0
+            test-multi:stable
+          load: 'true'
+          push: 'false'
+          no-cache: 'true'
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert all tags are present
+        run: |
+          for TAG in "test-multi:latest" "test-multi:1.0.0" "test-multi:stable"; do
+            if docker image inspect "$TAG" > /dev/null 2>&1; then
+              echo "PASS: tag $TAG found"
+            else
+              echo "FAIL: tag $TAG not found in local Docker"
+              exit 1
+            fi
+          done
+          echo "PASS: all tags present"
+
+      - name: Assert all tags point to the same image
+        run: |
+          ID_LATEST=$(docker inspect test-multi:latest --format '{{.Id}}')
+          ID_100=$(docker inspect test-multi:1.0.0 --format '{{.Id}}')
+          ID_STABLE=$(docker inspect test-multi:stable --format '{{.Id}}')
+          echo "latest: $ID_LATEST"
+          echo "1.0.0:  $ID_100"
+          echo "stable: $ID_STABLE"
+          if [ "$ID_LATEST" != "$ID_100" ] || [ "$ID_LATEST" != "$ID_STABLE" ]; then
+            echo "FAIL: tags point to different images"
+            exit 1
+          fi
+          echo "PASS: all tags point to the same image"

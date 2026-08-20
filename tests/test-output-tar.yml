@@ -1,0 +1,60 @@
+name: Test build with local tar output
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
+
+      - name: Create output directory
+        run: mkdir -p "$GITHUB_WORKSPACE/tests/output"
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/basic
+          file: tests/fixtures/basic/Dockerfile
+          tags: test-output:latest
+          push: 'false'
+          no-cache: 'true'
+          outputs: type=docker,dest=tests/output/image.tar
+
+      - name: Assert imageid is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS"
+
+      - name: Assert tar file was created
+        run: |
+          if [ ! -f "$GITHUB_WORKSPACE/tests/output/image.tar" ]; then
+            echo "FAIL: expected tar file at tests/output/image.tar not found"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$GITHUB_WORKSPACE/tests/output/image.tar")
+          echo "tar file size: $SIZE bytes"
+          if [ "$SIZE" -lt 1024 ]; then
+            echo "FAIL: tar file is suspiciously small ($SIZE bytes)"
+            exit 1
+          fi
+          echo "PASS: tar file created successfully ($SIZE bytes)"
+
+      - name: Assert tar file is a valid Docker image
+        run: |
+          docker load -i "$GITHUB_WORKSPACE/tests/output/image.tar"
+          if ! docker image inspect test-output:latest > /dev/null 2>&1; then
+            echo "FAIL: loaded image not found in Docker"
+            exit 1
+          fi
+          echo "PASS: tar file is a valid Docker image"
