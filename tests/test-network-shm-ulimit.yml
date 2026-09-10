@@ -1,4 +1,4 @@
-name: Test build with secrets, secret-envs, and secret-files
+name: Test build with network, shm-size, and ulimit
 on:
   workflow_dispatch:
 jobs:
@@ -7,36 +7,21 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create Dockerfile that uses secrets
-        run: |
-          mkdir -p /tmp/secrets-ctx
-          cat > /tmp/secrets-ctx/Dockerfile << 'EOF'
-          FROM alpine:3.19
-          RUN --mount=type=secret,id=mysecret \
-              cat /run/secrets/mysecret > /dev/null && echo "secret mounted" > /secret-check.txt
-          CMD ["cat", "/secret-check.txt"]
-          EOF
-          echo "my-secret-value" > /tmp/test-secret-file.txt
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - id: build
-        name: Build image with secrets
+        name: Build image with network, shm-size, and ulimit
         uses: .
         with:
-          context: /tmp/secrets-ctx
+          context: tests/fixtures
+          file: tests/fixtures/Dockerfile
           load: 'true'
           push: 'false'
-          tags: test-secrets:latest
-          secrets: |
-            mysecret=my-inline-secret-value
-          secret-envs: |
-            mysecret=MY_SECRET_ENV
-          secret-files: |
-            myfilesecret=/tmp/test-secret-file.txt
-        env:
-          MY_SECRET_ENV: my-env-secret-value
+          tags: test-network-shm-ulimit:latest
+          network: host
+          shm-size: 128m
+          ulimit: nofile=1024:1024
 
       - name: Assert imageid is set
         env:

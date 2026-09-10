@@ -1,4 +1,4 @@
-name: Test no-cache-filters input
+name: Test build with no-cache-filters
 on:
   workflow_dispatch:
 jobs:
@@ -7,30 +7,30 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
-
       - name: Create multi-stage Dockerfile for no-cache-filters test
         run: |
           mkdir -p /tmp/no-cache-filters-ctx
           cat > /tmp/no-cache-filters-ctx/Dockerfile << 'EOF'
-          FROM alpine:3.19 AS base
-          RUN echo "base stage"
+          FROM alpine:3.19 AS deps
+          RUN echo "deps stage" > /deps.txt
 
-          FROM base AS final
-          RUN echo "final stage"
-          CMD ["echo", "hello"]
+          FROM deps AS app
+          RUN echo "app stage" > /app.txt
+          CMD ["sh", "-c", "cat /deps.txt && cat /app.txt"]
           EOF
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
       - id: build
-        name: Build image with no-cache-filters on final stage
+        name: Build image with no-cache-filters on deps stage
         uses: .
         with:
           context: /tmp/no-cache-filters-ctx
-          push: 'false'
           load: 'true'
+          push: 'false'
           tags: test-no-cache-filters:latest
-          no-cache-filters: 'final'
+          no-cache-filters: deps
 
       - name: Assert imageid is set
         env:
@@ -43,13 +43,13 @@ jobs:
           fi
           echo "PASS: imageid is set"
 
-      - name: Assert metadata is set
-        env:
-          METADATA: ${{ steps.build.outputs.metadata }}
+      - name: Assert image runs correctly
         run: |
-          echo "metadata: $METADATA"
-          if [ -z "$METADATA" ]; then
-            echo "FAIL: metadata output is empty"
+          OUTPUT=$(docker run --rm test-no-cache-filters:latest)
+          echo "container output: $OUTPUT"
+          if echo "$OUTPUT" | grep -q "deps stage"; then
+            echo "PASS: deps stage content found"
+          else
+            echo "FAIL: expected 'deps stage' in output, got: $OUTPUT"
             exit 1
           fi
-          echo "PASS: metadata is set"

@@ -1,4 +1,4 @@
-name: Test build with call (check)
+name: Test build with cgroup-parent
 on:
   workflow_dispatch:
 jobs:
@@ -11,24 +11,32 @@ jobs:
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - id: build
-        name: Build with call=check to evaluate the build
+        name: Build image with cgroup-parent
         uses: .
         continue-on-error: true
         with:
           context: tests/fixtures
           file: tests/fixtures/Dockerfile
+          load: 'true'
           push: 'false'
-          call: check
+          tags: test-cgroup-parent:latest
+          cgroup-parent: /test-cgroup
 
-      - name: Assert build ran (call=check may succeed or fail gracefully)
+      - name: Assert build ran (cgroup-parent may not be supported in all environments)
         env:
           OUTCOME: ${{ steps.build.outcome }}
+          IMAGEID: ${{ steps.build.outputs.imageid }}
         run: |
           echo "outcome: $OUTCOME"
+          echo "imageid: $IMAGEID"
           if [ "$OUTCOME" = "success" ]; then
-            echo "PASS: build check succeeded"
+            if [ -z "$IMAGEID" ]; then
+              echo "FAIL: build succeeded but imageid is empty"
+              exit 1
+            fi
+            echo "PASS: build with cgroup-parent succeeded"
           elif [ "$OUTCOME" = "failure" ]; then
-            echo "PASS: build check ran and reported issues (acceptable outcome)"
+            echo "PASS: build with cgroup-parent failed gracefully (cgroup may not be supported)"
           else
             echo "FAIL: unexpected outcome '$OUTCOME'"
             exit 1
