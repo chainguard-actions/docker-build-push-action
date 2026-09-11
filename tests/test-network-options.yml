@@ -1,4 +1,4 @@
-name: Test cache-from and cache-to inputs
+name: Test network, cgroup-parent, shm-size, and ulimit inputs
 on:
   workflow_dispatch:
 jobs:
@@ -15,14 +15,16 @@ jobs:
       - id: build
         uses: .
         with:
-          context: tests/fixtures/cache
-          file: tests/fixtures/cache/Dockerfile
-          tags: test-cache:latest
+          context: tests/fixtures/network
+          file: tests/fixtures/network/Dockerfile
+          tags: test-network:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+          network: host
+          shm-size: 128m
+          ulimit: nofile=1024:1024
+          cgroup-parent: ''
 
       - name: Assert imageid is set
         env:

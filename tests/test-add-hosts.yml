@@ -1,4 +1,4 @@
-name: Test cache-from and cache-to inputs
+name: Test add-hosts input
 on:
   workflow_dispatch:
 jobs:
@@ -15,14 +15,14 @@ jobs:
       - id: build
         uses: .
         with:
-          context: tests/fixtures/cache
-          file: tests/fixtures/cache/Dockerfile
-          tags: test-cache:latest
+          context: tests/fixtures/basic
+          file: tests/fixtures/basic/Dockerfile
+          tags: test-add-hosts:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+          add-hosts: |
+            myhost:127.0.0.1
 
       - name: Assert imageid is set
         env:
