@@ -22,8 +22,7 @@ jobs:
           load: 'true'
           push: 'false'
           tags: test-no-cache-filters:latest
-          no-cache-filters: |
-            builder
+          no-cache-filters: builder
           provenance: 'false'
           sbom: 'false'
         env:

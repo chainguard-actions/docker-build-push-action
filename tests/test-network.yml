@@ -1,4 +1,4 @@
-name: Test build with build-contexts
+name: Test build with network mode
 on:
   workflow_dispatch:
 jobs:
@@ -10,20 +10,19 @@ jobs:
       - name: Set up Docker Buildx
         run: |
           docker buildx version || true
-          docker buildx create --name test-builder-buildcontexts --use --bootstrap 2>/dev/null || \
-            docker buildx use test-builder-buildcontexts 2>/dev/null || true
+          docker buildx create --name test-builder-network --use --bootstrap 2>/dev/null || \
+            docker buildx use test-builder-network 2>/dev/null || true
           docker buildx inspect --bootstrap
 
       - id: build
         uses: .
         with:
           context: .
-          file: tests/fixtures/Dockerfile.buildcontexts
+          file: tests/fixtures/Dockerfile.network
           load: 'true'
           push: 'false'
-          tags: test-build-contexts:latest
-          build-contexts: |
-            myctx=tests/fixtures
+          tags: test-network:latest
+          network: host
           provenance: 'false'
           sbom: 'false'
         env:
@@ -36,7 +35,7 @@ jobs:
         run: |
           echo "imageid: $IMAGEID"
           if [ -z "$IMAGEID" ]; then
-            echo "FAIL: imageid output is empty — build with build-contexts may have failed"
+            echo "FAIL: imageid output is empty — build with network mode may have failed"
             exit 1
           fi
           echo "PASS: imageid is set to $IMAGEID"

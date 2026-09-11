@@ -23,7 +23,7 @@ jobs:
           push: 'false'
           tags: test-annotations:latest
           annotations: |
-            org.opencontainers.image.description=Test annotation
+            org.opencontainers.image.description=Test image with annotations
             org.opencontainers.image.vendor=TestVendor
           provenance: 'false'
           sbom: 'false'

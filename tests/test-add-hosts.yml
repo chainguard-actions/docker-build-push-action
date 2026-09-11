@@ -18,7 +18,7 @@ jobs:
         uses: .
         with:
           context: .
-          file: tests/fixtures/Dockerfile.basic
+          file: tests/fixtures/Dockerfile.network
           load: 'true'
           push: 'false'
           tags: test-add-hosts:latest

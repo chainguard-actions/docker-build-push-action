@@ -10,8 +10,7 @@ jobs:
       - name: Set up Docker Buildx
         run: |
           docker buildx version || true
-          docker buildx create --name test-builder-allow --use --bootstrap \
-            --buildkitd-flags '--allow-insecure-entitlement security.insecure' 2>/dev/null || \
+          docker buildx create --name test-builder-allow --use --bootstrap 2>/dev/null || \
             docker buildx use test-builder-allow 2>/dev/null || true
           docker buildx inspect --bootstrap
 
@@ -19,11 +18,12 @@ jobs:
         uses: .
         with:
           context: .
-          file: tests/fixtures/Dockerfile.basic
+          file: tests/fixtures/Dockerfile.network
           load: 'true'
           push: 'false'
           tags: test-allow:latest
-          allow: security.insecure
+          allow: network.host
+          network: host
           provenance: 'false'
           sbom: 'false'
         env:

@@ -1,4 +1,4 @@
-name: Test build with builder input
+name: Test build with custom builder
 on:
   workflow_dispatch:
 jobs:
@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Create named builder instance
+      - name: Create custom builder instance
         run: |
           docker buildx create --name my-custom-builder --use --bootstrap 2>/dev/null || \
             docker buildx use my-custom-builder 2>/dev/null || true
@@ -20,7 +20,7 @@ jobs:
           file: tests/fixtures/Dockerfile.basic
           load: 'true'
           push: 'false'
-          tags: test-builder-input:latest
+          tags: test-builder:latest
           builder: my-custom-builder
           provenance: 'false'
           sbom: 'false'
@@ -34,7 +34,7 @@ jobs:
         run: |
           echo "imageid: $IMAGEID"
           if [ -z "$IMAGEID" ]; then
-            echo "FAIL: imageid output is empty — build with builder input may have failed"
+            echo "FAIL: imageid output is empty — build with custom builder may have failed"
             exit 1
           fi
           echo "PASS: imageid is set to $IMAGEID"

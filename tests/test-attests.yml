@@ -21,8 +21,10 @@ jobs:
           file: tests/fixtures/Dockerfile.basic
           push: 'false'
           tags: test-attests:latest
-          attests: type=provenance,mode=min
+          attests: type=sbom,generator=local
           outputs: type=local,dest=/tmp/test-attests-output
+          provenance: 'false'
+          sbom: 'false'
         env:
           DOCKER_BUILD_SUMMARY: 'false'
           DOCKER_BUILD_RECORD_UPLOAD: 'false'
