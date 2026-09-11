@@ -1,4 +1,4 @@
-name: Test build with secrets, secret-envs, and secret-files
+name: Test build with network, cgroup-parent, and shm-size
 on:
   workflow_dispatch:
 jobs:
@@ -9,34 +9,31 @@ jobs:
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-secrets || true
+          docker buildx create --use --name test-builder-network || true
           docker buildx inspect --bootstrap
 
-      - name: Write test Dockerfile and secret file
+      - name: Write test Dockerfile
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/secrets"
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/secrets/Dockerfile" <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/network"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/network/Dockerfile" <<'EOF'
           # syntax=docker/dockerfile:1
           FROM alpine:3.18
-          RUN --mount=type=secret,id=mysecret echo "secret build test"
+          RUN echo "network build test"
           EOF
-          echo "my-secret-value" > "$GITHUB_WORKSPACE/tests/fixtures/secrets/secret.txt"
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/secrets
-          file: tests/fixtures/secrets/Dockerfile
-          tags: test-secrets-build:latest
+          context: tests/fixtures/network
+          file: tests/fixtures/network/Dockerfile
+          tags: test-network-build:latest
           load: 'true'
           push: 'false'
           no-cache: 'true'
           provenance: 'false'
-          secrets: mysecret=my-inline-secret-value
-          secret-envs: mysecretenv=MY_TEST_SECRET_ENV
-          secret-files: mysecretfile=tests/fixtures/secrets/secret.txt
-        env:
-          MY_TEST_SECRET_ENV: test-env-secret-value
+          network: host
+          cgroup-parent: /docker
+          shm-size: 128m
 
       - name: Assert imageid is set
         env:

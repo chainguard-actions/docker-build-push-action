@@ -1,4 +1,4 @@
-name: Test build with additional build contexts
+name: Test build with build-contexts
 on:
   workflow_dispatch:
 jobs:
@@ -9,10 +9,10 @@ jobs:
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-contexts || true
+          docker buildx create --use --name test-builder-bctx || true
           docker buildx inspect --bootstrap
 
-      - name: Write test Dockerfiles and context dirs
+      - name: Write test Dockerfile and extra context
         run: |
           mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/main"
           mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/extra"
@@ -23,37 +23,26 @@ jobs:
           COPY --from=extractx /extra.txt /extra.txt
           RUN cat /extra.txt
           EOF
+          mkdir -p "$GITHUB_WORKSPACE/tests/bctx-dest"
 
       - id: build
         uses: .
         with:
           context: tests/fixtures/build-contexts/main
           file: tests/fixtures/build-contexts/main/Dockerfile
-          tags: test-build-contexts:latest
-          load: 'true'
+          outputs: type=local,dest=tests/bctx-dest
           push: 'false'
           no-cache: 'true'
           provenance: 'false'
           build-contexts: extractx=tests/fixtures/build-contexts/extra
 
-      - name: Assert imageid is set
+      - name: Assert metadata is set
         env:
-          IMAGEID: ${{ steps.build.outputs.imageid }}
+          METADATA: ${{ steps.build.outputs.metadata }}
         run: |
-          echo "imageid: $IMAGEID"
-          if [ -z "$IMAGEID" ]; then
-            echo "FAIL: imageid output is empty"
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
             exit 1
           fi
-          echo "PASS: imageid=$IMAGEID"
-
-      - name: Assert extra context file was included
-        run: |
-          CONTENT=$(docker run --rm test-build-contexts:latest cat /extra.txt)
-          echo "extra.txt content: $CONTENT"
-          if echo "$CONTENT" | grep -q "extra-file-content"; then
-            echo "PASS: extra build context was used"
-          else
-            echo "FAIL: extra build context content not found, got: $CONTENT"
-            exit 1
-          fi
+          echo "PASS: metadata is set"

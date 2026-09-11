@@ -1,4 +1,4 @@
-name: Test build with attests and sbom
+name: Test build with annotations and add-hosts
 on:
   workflow_dispatch:
 jobs:
@@ -9,30 +9,30 @@ jobs:
 
       - name: Set up Docker Buildx
         run: |
-          docker buildx create --use --name test-builder-attests || true
+          docker buildx create --use --name test-builder-annotations || true
           docker buildx inspect --bootstrap
 
       - name: Write test Dockerfile
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/attests"
-          cat > "$GITHUB_WORKSPACE/tests/fixtures/attests/Dockerfile" <<'EOF'
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/annotations"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/annotations/Dockerfile" <<'EOF'
           # syntax=docker/dockerfile:1
           FROM alpine:3.18
-          RUN echo "attestation build test"
+          RUN echo "annotations build test"
           EOF
-          mkdir -p "$GITHUB_WORKSPACE/tests/attests-dest"
+          mkdir -p "$GITHUB_WORKSPACE/tests/annotations-dest"
 
       - id: build
         uses: .
         with:
-          context: tests/fixtures/attests
-          file: tests/fixtures/attests/Dockerfile
-          outputs: type=local,dest=tests/attests-dest
+          context: tests/fixtures/annotations
+          file: tests/fixtures/annotations/Dockerfile
+          outputs: type=local,dest=tests/annotations-dest
           push: 'false'
           no-cache: 'true'
           provenance: 'false'
-          sbom: 'false'
-          attests: type=provenance,mode=min
+          annotations: index:org.opencontainers.image.description=Test annotation
+          add-hosts: testhost:127.0.0.1
 
       - name: Assert metadata is set
         env:

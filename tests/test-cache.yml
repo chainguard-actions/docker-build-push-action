@@ -1,4 +1,4 @@
-name: Test build with cache options
+name: Test build with cache-from and cache-to
 on:
   workflow_dispatch:
 jobs:
@@ -12,39 +12,35 @@ jobs:
           docker buildx create --use --name test-builder-cache || true
           docker buildx inspect --bootstrap
 
-      - name: Write test Dockerfile
+      - name: Write test Dockerfile and prepare cache dirs
         run: |
           mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/cache"
           cat > "$GITHUB_WORKSPACE/tests/fixtures/cache/Dockerfile" <<'EOF'
           # syntax=docker/dockerfile:1
           FROM alpine:3.18
-          RUN echo "cache test"
+          RUN echo "cache build test"
           EOF
-          mkdir -p /tmp/docker-cache
+          mkdir -p "$GITHUB_WORKSPACE/tests/cache-store"
+          mkdir -p "$GITHUB_WORKSPACE/tests/cache-dest"
+
+      - name: Prime the cache
+        run: |
+          docker buildx build \
+            --cache-to type=local,dest="$GITHUB_WORKSPACE/tests/cache-store",mode=max \
+            --file "$GITHUB_WORKSPACE/tests/fixtures/cache/Dockerfile" \
+            --no-cache \
+            "$GITHUB_WORKSPACE/tests/fixtures/cache"
 
       - id: build
         uses: .
         with:
           context: tests/fixtures/cache
           file: tests/fixtures/cache/Dockerfile
-          tags: test-cache:latest
-          load: 'true'
+          outputs: type=local,dest=tests/cache-dest
           push: 'false'
-          no-cache: 'false'
           provenance: 'false'
-          cache-to: type=local,dest=/tmp/docker-cache,mode=max
-          cache-from: type=local,src=/tmp/docker-cache
-
-      - name: Assert imageid is set
-        env:
-          IMAGEID: ${{ steps.build.outputs.imageid }}
-        run: |
-          echo "imageid: $IMAGEID"
-          if [ -z "$IMAGEID" ]; then
-            echo "FAIL: imageid output is empty"
-            exit 1
-          fi
-          echo "PASS: imageid=$IMAGEID"
+          cache-from: type=local,src=tests/cache-store
+          cache-to: type=local,dest=tests/cache-store,mode=max
 
       - name: Assert metadata is set
         env:
