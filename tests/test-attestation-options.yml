@@ -1,0 +1,46 @@
+name: Test build with attestation and annotation options
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile for testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/attestation"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/attestation/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "attestation test"
+          CMD ["echo", "hello"]
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-attest || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/attestation
+          file: tests/fixtures/attestation/Dockerfile
+          tags: test-attestation:latest
+          push: 'false'
+          outputs: type=local,dest=/tmp/attestation-output
+          annotations: "index:org.opencontainers.image.description=Test image"
+          provenance: 'false'
+          sbom: 'false'
+          attests: ""
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"

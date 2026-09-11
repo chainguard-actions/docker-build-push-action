@@ -1,0 +1,58 @@
+name: Test build with network and resource options
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile for testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/network-resource"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/network-resource/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "network resource test"
+          CMD ["echo", "hello"]
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-network || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/network-resource
+          file: tests/fixtures/network-resource/Dockerfile
+          tags: test-network-resource:latest
+          load: 'true'
+          push: 'false'
+          add-hosts: "myhost:127.0.0.1"
+          network: "host"
+          shm-size: "128m"
+          cgroup-parent: ""
+          ulimit: "nofile=1024:1024"
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: expected imageid to be non-empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"

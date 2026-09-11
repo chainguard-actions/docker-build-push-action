@@ -1,0 +1,49 @@
+name: Test build with build-contexts and platforms
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfiles for build-contexts testing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/base"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/base/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "base context"
+          EOF
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/main"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/build-contexts/main/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "main build with extra context"
+          CMD ["echo", "hello"]
+          EOF
+
+      - name: Set up Docker Buildx with QEMU for multi-platform
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install all || true
+          docker buildx create --use --name test-builder-platforms || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/build-contexts/main
+          file: tests/fixtures/build-contexts/main/Dockerfile
+          tags: test-build-contexts:latest
+          push: 'false'
+          platforms: linux/amd64
+          build-contexts: "extra=$GITHUB_WORKSPACE/tests/fixtures/build-contexts/base"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: expected metadata to be non-empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
