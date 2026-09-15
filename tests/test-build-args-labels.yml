@@ -1,0 +1,73 @@
+name: Test build with build-args and labels
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfile that uses build args
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/buildargs"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/buildargs/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          ARG MY_VERSION=unknown
+          ARG MY_ENV=unknown
+          RUN echo "version=$MY_VERSION env=$MY_ENV" > /build-info.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-args || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/buildargs
+          file: tests/fixtures/buildargs/Dockerfile
+          load: 'true'
+          push: 'false'
+          tags: test-build-args:latest
+          no-cache: 'true'
+          build-args: |
+            MY_VERSION=1.2.3
+            MY_ENV=testing
+          labels: |
+            org.opencontainers.image.title=Test Image
+            org.opencontainers.image.version=1.2.3
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert build-arg was applied
+        run: |
+          OUTPUT=$(docker run --rm test-build-args:latest cat /build-info.txt)
+          echo "build-info: $OUTPUT"
+          if ! echo "$OUTPUT" | grep -q "version=1.2.3"; then
+            echo "FAIL: build-arg MY_VERSION=1.2.3 not found in image"
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -q "env=testing"; then
+            echo "FAIL: build-arg MY_ENV=testing not found in image"
+            exit 1
+          fi
+          echo "PASS: build-args applied correctly"
+
+      - name: Assert label was applied
+        run: |
+          LABEL=$(docker inspect test-build-args:latest --format '{{ index .Config.Labels "org.opencontainers.image.title" }}')
+          echo "label: $LABEL"
+          if [ "$LABEL" != "Test Image" ]; then
+            echo "FAIL: expected label 'Test Image', got '$LABEL'"
+            exit 1
+          fi
+          echo "PASS: label applied correctly"

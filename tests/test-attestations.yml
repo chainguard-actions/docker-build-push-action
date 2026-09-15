@@ -1,0 +1,53 @@
+name: Test build with attestations (attests, provenance, sbom)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/attestations"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/attestations/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "attestation build test"
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-attest || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/attestations
+          file: tests/fixtures/attestations/Dockerfile
+          load: 'false'
+          push: 'false'
+          tags: test-attestations:latest
+          no-cache: 'true'
+          provenance: 'false'
+          sbom: 'false'
+          attests: 'type=provenance,mode=min'
+          outputs: type=oci,dest=/tmp/test-attestations.tar
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - name: Assert OCI tar was created
+        run: |
+          if [ ! -f /tmp/test-attestations.tar ]; then
+            echo "FAIL: OCI tar output not found at /tmp/test-attestations.tar"
+            exit 1
+          fi
+          echo "PASS: OCI tar output exists"

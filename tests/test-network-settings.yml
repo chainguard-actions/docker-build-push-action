@@ -1,0 +1,58 @@
+name: Test build with network settings (add-hosts, network, shm-size, ulimit, cgroup-parent)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/network"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/network/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "network build test"
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-network || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/network
+          file: tests/fixtures/network/Dockerfile
+          load: 'true'
+          push: 'false'
+          tags: test-network-settings:latest
+          no-cache: 'true'
+          add-hosts: |
+            myhost:127.0.0.1
+          network: host
+          shm-size: 128m
+          ulimit: nofile=1024:1024
+          cgroup-parent: ''
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"

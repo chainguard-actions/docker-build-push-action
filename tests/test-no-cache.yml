@@ -1,0 +1,64 @@
+name: Test build with no-cache option
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/nocache"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/nocache/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "no-cache build $(date)" > /build-time.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-nocache || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/nocache
+          file: tests/fixtures/nocache/Dockerfile
+          load: 'true'
+          push: 'false'
+          tags: test-no-cache:latest
+          no-cache: 'true'
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert image was loaded
+        run: |
+          if ! docker image inspect test-no-cache:latest > /dev/null 2>&1; then
+            echo "FAIL: image test-no-cache:latest not found in local Docker"
+            exit 1
+          fi
+          echo "PASS: image loaded into Docker"
+
+      - name: Assert metadata output is valid JSON
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          if ! echo "$METADATA" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
+            echo "FAIL: metadata is not valid JSON"
+            exit 1
+          fi
+          echo "PASS: metadata is valid JSON"

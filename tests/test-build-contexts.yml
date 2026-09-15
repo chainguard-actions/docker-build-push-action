@@ -1,0 +1,56 @@
+name: Test build with additional build contexts
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create Dockerfile and extra context directory
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/buildctx/main"
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/buildctx/extra"
+          echo "hello from extra context" > "$GITHUB_WORKSPACE/tests/fixtures/buildctx/extra/hello.txt"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/buildctx/main/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          COPY --from=extractx /hello.txt /hello.txt
+          RUN cat /hello.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-buildctx || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/buildctx/main
+          file: tests/fixtures/buildctx/main/Dockerfile
+          load: 'true'
+          push: 'false'
+          tags: test-build-contexts:latest
+          no-cache: 'true'
+          build-contexts: |
+            extractx=tests/fixtures/buildctx/extra
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert extra context file was included
+        run: |
+          OUTPUT=$(docker run --rm test-build-contexts:latest cat /hello.txt)
+          echo "output: $OUTPUT"
+          if ! echo "$OUTPUT" | grep -q "hello from extra context"; then
+            echo "FAIL: extra context file content not found in image"
+            exit 1
+          fi
+          echo "PASS: extra build context was used correctly"

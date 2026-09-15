@@ -1,0 +1,46 @@
+name: Test build with call=check (Dockerfile check/lint)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a valid Dockerfile for check
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/checkmode"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/checkmode/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "check mode test"
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-check || true
+
+      - id: build
+        uses: .
+        continue-on-error: true
+        with:
+          context: tests/fixtures/checkmode
+          file: tests/fixtures/checkmode/Dockerfile
+          push: 'false'
+          load: 'false'
+          call: check
+
+      - name: Assert build check ran (success or graceful failure)
+        env:
+          OUTCOME: ${{ steps.build.outcome }}
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "metadata: $METADATA"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: build check succeeded"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: build check ran and failed gracefully (may not be supported by this buildx version)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

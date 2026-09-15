@@ -1,0 +1,57 @@
+name: Test build with tar output (no load, no push)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a minimal Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/tarout"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/tarout/Dockerfile" <<'EOF'
+          FROM alpine:3.18
+          RUN echo "tar output test" > /info.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-tar || true
+          mkdir -p /tmp/build-output
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/tarout
+          file: tests/fixtures/tarout/Dockerfile
+          push: 'false'
+          load: 'false'
+          tags: test-tar-output:latest
+          no-cache: 'true'
+          outputs: type=tar,dest=/tmp/build-output/image.tar
+
+      - name: Assert metadata output is set
+        env:
+          METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          echo "metadata: $METADATA"
+          if [ -z "$METADATA" ]; then
+            echo "FAIL: metadata output is empty"
+            exit 1
+          fi
+          echo "PASS: metadata is set"
+
+      - name: Assert tar file was created
+        run: |
+          if [ ! -f /tmp/build-output/image.tar ]; then
+            echo "FAIL: expected tar file at /tmp/build-output/image.tar"
+            exit 1
+          fi
+          SIZE=$(stat -c%s /tmp/build-output/image.tar)
+          echo "tar file size: $SIZE bytes"
+          if [ "$SIZE" -lt 1024 ]; then
+            echo "FAIL: tar file is suspiciously small ($SIZE bytes)"
+            exit 1
+          fi
+          echo "PASS: tar file created with size $SIZE bytes"

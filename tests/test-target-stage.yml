@@ -1,0 +1,60 @@
+name: Test build with target stage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create multi-stage Dockerfile
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tests/fixtures/multistage"
+          cat > "$GITHUB_WORKSPACE/tests/fixtures/multistage/Dockerfile" <<'EOF'
+          FROM alpine:3.18 AS builder
+          RUN echo "builder-stage" > /stage.txt
+
+          FROM alpine:3.18 AS final
+          COPY --from=builder /stage.txt /stage.txt
+          RUN echo "final-stage" >> /stage.txt
+          EOF
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name test-builder-target || true
+
+      - id: build
+        uses: .
+        with:
+          context: tests/fixtures/multistage
+          file: tests/fixtures/multistage/Dockerfile
+          load: 'true'
+          push: 'false'
+          tags: test-target-stage:latest
+          target: builder
+          no-cache: 'true'
+
+      - name: Assert imageid output is set
+        env:
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: |
+          echo "imageid: $IMAGEID"
+          if [ -z "$IMAGEID" ]; then
+            echo "FAIL: imageid output is empty"
+            exit 1
+          fi
+          echo "PASS: imageid is set"
+
+      - name: Assert only builder stage was built (no final-stage content)
+        run: |
+          OUTPUT=$(docker run --rm test-target-stage:latest cat /stage.txt)
+          echo "stage.txt content: $OUTPUT"
+          if ! echo "$OUTPUT" | grep -q "builder-stage"; then
+            echo "FAIL: builder-stage content not found"
+            exit 1
+          fi
+          if echo "$OUTPUT" | grep -q "final-stage"; then
+            echo "FAIL: final-stage content found but should not be (target=builder)"
+            exit 1
+          fi
+          echo "PASS: only builder stage was built"
